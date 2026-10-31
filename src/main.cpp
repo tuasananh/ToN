@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -14,23 +15,32 @@
 #include "ton/core/types.hpp"
 #include "ton/orchestration/provisioning_harness.hpp"
 #include "ton/orchestration/telemetry.hpp"
+#include "ton/verification/invariant_auditor.hpp"
 
 namespace {
 
 void print_usage(std::ostream& os, std::string_view prog) {
   os << "Usage: " << prog << " [options]\n"
      << "Options:\n"
-     << "  --topology <xml>       Path to SNDlib topology XML\n"
-     << "  --stream <csv>         Path to frozen arrival stream CSV\n"
-     << "  --cut-model <m>        span (default) or directional\n"
-     << "  --algorithm <alg>      SimRDF | SeqRDF | GreedySimRDF | "
+     << "  --topology <xml>             Path to SNDlib topology XML\n"
+     << "  --stream <csv>               Path to frozen arrival stream CSV\n"
+     << "  --cut-model <m>              span (default) or directional\n"
+     << "  --algorithm <alg>            SimRDF | SeqRDF | GreedySimRDF | "
         "GreedySeqRDF |\n"
-     << "                         NoRerouteSimRDF | NoRerouteSeqRDF | all "
+     << "                               NoRerouteSimRDF | NoRerouteSeqRDF | "
+        "all "
         "(default)\n"
-     << "  --max-requests <N>     Max requests to process (default: 1000)\n"
-     << "  --output-steps <csv>   Write per-step trajectory CSV (single alg)\n"
-     << "  --output-dir <dir>     Write <algorithm>_steps.csv into directory\n"
-     << "  -h, --help             Show this help message\n";
+     << "  --max-requests <N>           Max requests to process (default: "
+        "1000)\n"
+     << "  --output-steps <csv>         Write per-step trajectory CSV (single "
+        "alg)\n"
+     << "  --output-dir <dir>           Write <algorithm>_steps.csv into "
+        "directory\n"
+     << "  --verify-invariants [csv]    Audit trajectory CSV against metric "
+        "invariants,\n"
+     << "                               or verify state & metric invariants "
+        "during simulation\n"
+     << "  -h, --help                   Show this help message\n";
 }
 
 void write_steps_atomic(const std::filesystem::path& out_path,
@@ -51,6 +61,8 @@ int main(int argc, char** argv) {
   std::filesystem::path stream_path;
   std::filesystem::path output_steps_path;
   std::filesystem::path output_dir_path;
+  std::filesystem::path verify_invariants_path;
+  bool verify_invariants = false;
   ton::CutModel cut_model = ton::CutModel::Span;
   bool run_all_algorithms = true;
   ton::AlgorithmId single_algorithm = ton::AlgorithmId::SimRDF;
@@ -71,7 +83,12 @@ int main(int argc, char** argv) {
         print_usage(std::cout, argv[0]);
         return EXIT_SUCCESS;
       }
-      if (arg == "--topology") {
+      if (arg == "--verify-invariants") {
+        verify_invariants = true;
+        if (i + 1 < argc && argv[i + 1][0] != '-') {
+          verify_invariants_path = argv[++i];
+        }
+      } else if (arg == "--topology") {
         topology_path = require_value(arg);
       } else if (arg == "--stream") {
         stream_path = require_value(arg);
@@ -104,6 +121,34 @@ int main(int argc, char** argv) {
       } else {
         throw std::invalid_argument("Unknown option: " + std::string(arg));
       }
+    }
+
+    if (!verify_invariants_path.empty() &&
+        (topology_path.empty() || stream_path.empty())) {
+      std::cout << "Auditing trajectory CSV against metric invariants: "
+                << verify_invariants_path.string() << "\n";
+      const auto audit_res =
+          ton::InvariantAuditor::audit_trajectory_csv(verify_invariants_path);
+      if (audit_res.passed) {
+        std::cout << "[PASS] InvariantAuditor: Trajectory log "
+                  << verify_invariants_path.string()
+                  << " satisfies all metric invariants (0 violations).\n";
+        return EXIT_SUCCESS;
+      }
+      std::cerr << "[FAIL] InvariantAuditor: Trajectory log "
+                << verify_invariants_path.string() << " has "
+                << audit_res.violations.size() << " invariant violation(s):\n";
+      for (size_t vi = 0;
+           vi < std::min(audit_res.violations.size(), size_t{20}); ++vi) {
+        const auto& v = audit_res.violations[vi];
+        std::cerr << "  - [" << ton::invariant_code_name(v.code) << "] "
+                  << v.message << "\n";
+      }
+      if (audit_res.violations.size() > 20) {
+        std::cerr << "  ... and " << (audit_res.violations.size() - 20)
+                  << " more.\n";
+      }
+      return EXIT_FAILURE;
     }
 
     if (topology_path.empty() || stream_path.empty()) {
@@ -155,12 +200,39 @@ int main(int argc, char** argv) {
               << std::setw(9) << "Block%" << std::setw(13) << "T_pre(us)"
               << std::setw(13) << "T_full(us)" << std::setw(11) << "U_prim%"
               << std::setw(11) << "U_pure%" << std::setw(11) << "U_stub%"
-              << std::setw(11) << "Overhead" << std::setw(10) << "RefcntOK\n";
+              << std::setw(11) << "Overhead" << std::setw(10) << "RefcntOK";
+    if (verify_invariants) {
+      std::cout << std::setw(8) << "InvOK";
+    }
+    std::cout << "\n";
 
     for (const ton::AlgorithmId alg : selected) {
       const ton::ProvisioningRunResult run = ton::run_provisioning_algorithm(
           alg, graph, scenarios, path_pool, requests);
       const ton::RunSummary& s = run.summary;
+
+      bool invariants_ok = s.refcounts_exact;
+      if (verify_invariants) {
+        for (const auto& rec : run.records) {
+          const auto rec_res = ton::InvariantAuditor::audit_step_record(rec);
+          if (!rec_res.passed) {
+            invariants_ok = false;
+            std::cerr << "[FAIL] Step record invariant violation at t=" << rec.t
+                      << ": " << rec_res.violations.front().message << "\n";
+            break;
+          }
+        }
+        if (invariants_ok) {
+          const auto state_audit =
+              ton::InvariantAuditor::audit_state(run.state, path_pool);
+          if (!state_audit.passed) {
+            invariants_ok = false;
+            std::cerr << "[FAIL] Final state invariant violation for "
+                      << ton::algorithm_name(alg) << ": "
+                      << state_audit.violations.front().message << "\n";
+          }
+        }
+      }
 
       std::cout << std::left << std::setw(17) << ton::algorithm_name(alg)
                 << std::right << std::setw(10) << s.first_denial_idx
@@ -173,23 +245,43 @@ int main(int argc, char** argv) {
                 << s.spectral_final.u_pure_pct << std::setw(11)
                 << s.spectral_final.u_stub_pct << std::setw(11)
                 << std::setprecision(4) << s.spectral_final.overhead_ratio
-                << std::setw(10) << (s.refcounts_exact ? "true" : "FALSE")
-                << "\n";
+                << std::setw(10) << (s.refcounts_exact ? "true" : "FALSE");
+      if (verify_invariants) {
+        std::cout << std::setw(8) << (invariants_ok ? "PASS" : "FAIL");
+      }
+      std::cout << "\n";
 
-      if (!s.refcounts_exact) {
-        std::cerr << "[FATAL] backup_slot_refcount mismatch for "
+      if (!s.refcounts_exact || !invariants_ok) {
+        std::cerr << "[FATAL] Invariant verification failed for "
                   << ton::algorithm_name(alg) << "\n";
         return EXIT_FAILURE;
       }
 
       if (!output_steps_path.empty()) {
         write_steps_atomic(output_steps_path, run.records);
+        if (verify_invariants) {
+          const auto csv_audit =
+              ton::InvariantAuditor::audit_trajectory_csv(output_steps_path);
+          if (!csv_audit.passed) {
+            std::cerr << "[FATAL] Written CSV failed trajectory audit: "
+                      << output_steps_path.string() << "\n";
+            return EXIT_FAILURE;
+          }
+        }
       }
       if (!output_dir_path.empty()) {
         const std::filesystem::path p =
             output_dir_path /
             (std::string(ton::algorithm_name(alg)) + "_steps.csv");
         write_steps_atomic(p, run.records);
+        if (verify_invariants) {
+          const auto csv_audit = ton::InvariantAuditor::audit_trajectory_csv(p);
+          if (!csv_audit.passed) {
+            std::cerr << "[FATAL] Written CSV failed trajectory audit: "
+                      << p.string() << "\n";
+            return EXIT_FAILURE;
+          }
+        }
       }
     }
     return EXIT_SUCCESS;
