@@ -61,6 +61,7 @@ add_library(
         src/solvers/no_reroute_solver.cpp
         src/solvers/greedy_solver.cpp
         src/solvers/dsatur_solver.cpp
+        src/verification/invariant_auditor.cpp
 )
 target_include_directories(ton_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(ton_core PUBLIC ton_compile_options)
