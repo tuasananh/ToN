@@ -40,7 +40,9 @@ NetworkState::NetworkState(const Graph& graph, const ScenarioSet& scenarios,
       is_admitted_(max_requests_, uint8_t{0}),
       requests_(max_requests_, Request{}),
       primary_lightpaths_(max_requests_, Lightpath{}),
-      admitted_ids_(max_requests_, INVALID_REQUEST) {
+      admitted_ids_(max_requests_, INVALID_REQUEST),
+      dirty_arc_words_((static_cast<size_t>(num_arcs_) + 63u) / 64u,
+                       uint64_t{0}) {
   const uint16_t dual_cut_arcs =
       (scenarios.cut_model() == CutModel::Span) ? 4u : 2u;
   const uint16_t single_cut_arcs =
@@ -73,6 +75,7 @@ void NetworkState::reset() noexcept {
   sim_table_.clear();
   s1_table_.clear();
   s2_table_.clear();
+  std::fill(dirty_arc_words_.begin(), dirty_arc_words_.end(), uint64_t{0});
 }
 
 const NetworkState::StateBackupTable& NetworkState::table_for(
@@ -251,8 +254,6 @@ void NetworkState::commit(const Request& req, Lightpath primary_lp,
   primary_lightpaths_[req.id] = primary_lp;
   admitted_ids_[num_admitted_++] = req.id;
 
-  constexpr size_t kFastDirtyArcLimit = 512;
-
   for (const StagedStateDelta& d : staged.deltas()) {
     StateBackupTable& tbl = table_for(d.domain);
     const uint32_t f = d.state_id;
@@ -294,15 +295,8 @@ void NetworkState::commit(const Request& req, Lightpath primary_lp,
         tbl.assignments.data() + static_cast<size_t>(f) * tbl.per_state_cap;
     const uint16_t old_cnt = tbl.counts[f];
 
-    std::array<uint64_t, kFastDirtyArcLimit / 64> dirty_arc_words{};
-    std::array<BackupAssignment, 128> old_fallback{};
-    const bool use_fast_dirty = num_arcs_ <= kFastDirtyArcLimit;
-
     for (uint16_t i = 0; i < old_cnt; ++i) {
       const BackupAssignment old_ba = row[i];
-      if (!use_fast_dirty) {
-        old_fallback[i] = old_ba;
-      }
       const WavelengthMask old_bit = wavelength_bit(old_ba.wavelength);
       for (const ArcId a : path_pool.path_arcs(old_ba.path_id)) {
         WavelengthMask& sm = tbl.masks[static_cast<size_t>(f) * num_arcs_ + a];
@@ -317,9 +311,7 @@ void NetworkState::commit(const Request& req, Lightpath primary_lp,
         if (rc == 0u) {
           backup_active_mask_[a] &= ~old_bit;
         }
-        if (use_fast_dirty) {
-          dirty_arc_words[a >> 6] |= (uint64_t{1} << (a & 63u));
-        }
+        dirty_arc_words_[a >> 6] |= (uint64_t{1} << (a & 63u));
       }
     }
 
@@ -350,22 +342,15 @@ void NetworkState::commit(const Request& req, Lightpath primary_lp,
       }
     }
 
-    if (use_fast_dirty) {
-      for (size_t w_idx = 0; w_idx < dirty_arc_words.size(); ++w_idx) {
-        uint64_t word = dirty_arc_words[w_idx];
-        while (word != 0u) {
-          const auto bit_pos = static_cast<uint16_t>(std::countr_zero(word));
-          word &= (word - 1u);
-          const auto a = static_cast<ArcId>(w_idx * 64u + bit_pos);
-          refresh_block_union(tbl, blk, a);
-        }
+    for (size_t w_idx = 0; w_idx < dirty_arc_words_.size(); ++w_idx) {
+      uint64_t word = dirty_arc_words_[w_idx];
+      while (word != 0u) {
+        const auto bit_pos = static_cast<uint16_t>(std::countr_zero(word));
+        word &= (word - 1u);
+        const auto a = static_cast<ArcId>(w_idx * 64u + bit_pos);
+        refresh_block_union(tbl, blk, a);
       }
-    } else {
-      for (uint16_t i = 0; i < old_cnt; ++i) {
-        for (const ArcId a : path_pool.path_arcs(old_fallback[i].path_id)) {
-          refresh_block_union(tbl, blk, a);
-        }
-      }
+      dirty_arc_words_[w_idx] = 0u;
     }
   }
 }

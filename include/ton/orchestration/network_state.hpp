@@ -294,6 +294,8 @@ class NetworkState {
   StateBackupTable sim_table_;
   StateBackupTable s1_table_;
   StateBackupTable s2_table_;
+
+  std::vector<uint64_t> dirty_arc_words_;
 };
 
 }  // namespace ton
