@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -34,12 +35,18 @@ struct RawPath {
 struct PathSlice {
   struct Iterator {
     using iterator_category = std::random_access_iterator_tag;
+    using iterator_concept = std::random_access_iterator_tag;
     using value_type = PathId;
     using difference_type = std::ptrdiff_t;
+    using pointer = const PathId*;
+    using reference = PathId;
 
     PathId current = INVALID_PATH;
 
     constexpr PathId operator*() const noexcept { return current; }
+    constexpr PathId operator[](difference_type n) const noexcept {
+      return static_cast<PathId>(current + n);
+    }
     constexpr Iterator& operator++() noexcept {
       ++current;
       return *this;
@@ -49,6 +56,44 @@ struct PathSlice {
       ++current;
       return tmp;
     }
+    constexpr Iterator& operator--() noexcept {
+      --current;
+      return *this;
+    }
+    constexpr Iterator operator--(int) noexcept {
+      Iterator tmp = *this;
+      --current;
+      return tmp;
+    }
+    constexpr Iterator& operator+=(difference_type n) noexcept {
+      current = static_cast<PathId>(current + n);
+      return *this;
+    }
+    constexpr Iterator& operator-=(difference_type n) noexcept {
+      current = static_cast<PathId>(current - n);
+      return *this;
+    }
+    friend constexpr Iterator operator+(Iterator it,
+                                        difference_type n) noexcept {
+      it += n;
+      return it;
+    }
+    friend constexpr Iterator operator+(difference_type n,
+                                        Iterator it) noexcept {
+      it += n;
+      return it;
+    }
+    friend constexpr Iterator operator-(Iterator it,
+                                        difference_type n) noexcept {
+      it -= n;
+      return it;
+    }
+    friend constexpr difference_type operator-(const Iterator& a,
+                                               const Iterator& b) noexcept {
+      return static_cast<difference_type>(a.current) -
+             static_cast<difference_type>(b.current);
+    }
+    constexpr auto operator<=>(const Iterator&) const noexcept = default;
     constexpr bool operator==(const Iterator&) const noexcept = default;
   };
 

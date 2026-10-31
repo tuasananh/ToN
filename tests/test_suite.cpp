@@ -486,6 +486,17 @@ void test_yen_path_pool_and_lexicographic_ties() {
 
   ton::PathPool pool(germany, ton::DistanceMetric::GeographicKm, 0.10, 10);
   pool.prewarm_all_healthy();
+
+  // Test random-access iterator compliance (Finding P2A-1).
+  static_assert(std::random_access_iterator<ton::PathSlice::Iterator>);
+  const ton::PathSlice sample_slice = pool.find_healthy(0, 1);
+  TON_CHECK(!sample_slice.empty());
+  TON_CHECK(std::distance(sample_slice.begin(), sample_slice.end()) ==
+            static_cast<std::ptrdiff_t>(sample_slice.size()));
+  TON_CHECK(sample_slice.end() - sample_slice.begin() ==
+            static_cast<std::ptrdiff_t>(sample_slice.size()));
+  TON_CHECK(*(sample_slice.begin() + 0) == sample_slice[0]);
+  TON_CHECK(*(sample_slice.end() - 1) == sample_slice[sample_slice.size() - 1]);
   for (ton::NodeId u = 0; u < germany.num_nodes(); ++u) {
     for (ton::NodeId v = 0; v < germany.num_nodes(); ++v) {
       if (u == v) {
