@@ -57,6 +57,9 @@ add_library(
         src/core/path_pool.cpp
         src/orchestration/network_state.cpp
         src/orchestration/telemetry.cpp
+        src/solvers/no_reroute_solver.cpp
+        src/solvers/greedy_solver.cpp
+        src/solvers/dsatur_solver.cpp
 )
 target_include_directories(ton_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(ton_core PUBLIC ton_compile_options)
