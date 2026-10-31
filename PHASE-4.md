@@ -130,10 +130,10 @@ flowchart TD
 
 Before Phase 4 can be marked complete and Phase 5 pilot benchmark initiated:
 
-- [ ] `InvariantAuditor` independently verifies System Invariants `INV-1` through `INV-5`.
-- [ ] Adversarial fuzz harness confirms 100% detection sensitivity across all injected invariant corruptions.
-- [ ] 0 false positives on valid admitted states across all 6 algorithms.
-- [ ] Full $T = 1,000$ streams on seeds 01, 02, and 03 pass invariant audit periodically and at $t = 999$.
-- [ ] Clang 23.1.4 and GCC 16.2.1 compile with `-Wall -Wextra -Wpedantic -Werror` with **0 errors and 0 warnings**.
-- [ ] AddressSanitizer and UndefinedBehaviorSanitizer pass with **0 errors and 0 memory leaks**.
-- [ ] Repository remains in a clean, passing state with atomic micro-commits.
+- [x] `InvariantAuditor` independently verifies System Invariants `INV-1` through `INV-5`.
+- [x] Adversarial fuzz harness confirms 100% detection sensitivity across all injected invariant corruptions.
+- [x] 0 false positives on valid admitted states across all 6 algorithms.
+- [x] Full $T = 1,000$ streams on seeds 01, 02, and 03 pass invariant audit periodically and at $t = 999$.
+- [x] Clang 23.1.4 and GCC 16.2.1 compile with `-Wall -Wextra -Wpedantic -Werror` with **0 errors and 0 warnings**.
+- [x] AddressSanitizer and UndefinedBehaviorSanitizer pass with **0 errors and 0 memory leaks**.
+- [x] Repository remains in a clean, passing state with atomic micro-commits.
