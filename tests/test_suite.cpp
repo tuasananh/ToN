@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -6,7 +7,9 @@
 #include <limits>
 #include <numbers>
 #include <source_location>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -14,6 +17,9 @@
 #include "ton/core/path_pool.hpp"
 #include "ton/core/scenarios.hpp"
 #include "ton/core/types.hpp"
+#include "ton/orchestration/network_state.hpp"
+#include "ton/orchestration/staging_arena.hpp"
+#include "ton/orchestration/telemetry.hpp"
 
 namespace {
 
@@ -596,6 +602,223 @@ void test_yen_path_pool_and_lexicographic_ties() {
   TON_CHECK(pool.num_paths() == frozen_num_paths);
 }
 
+void test_network_state_staging_and_telemetry() {
+  const auto nobel = ton::Graph::from_sndlib_xml(repo_root() / "data" /
+                                                 "topologies" / "nobel-eu.xml");
+  const auto nobel_span =
+      ton::ScenarioSet::enumerate(nobel, ton::CutModel::Span);
+
+  ton::PathPool pool(nobel, ton::DistanceMetric::GeographicKm, 0.10, 10);
+  pool.prewarm_all_healthy();
+
+  // 1. Simultaneous NetworkState, O(1) rollback/checkpoint, ReplaceState &
+  // AppendSingle, Stub-Release overlap, and exact telemetry equations.
+  ton::NetworkState sim_state(nobel, nobel_span,
+                              ton::FailureRegime::Simultaneous, 64);
+  auto sim_staged = ton::StagedAssignments::for_regime(
+      nobel_span, ton::FailureRegime::Simultaneous, 64);
+
+  const auto empty_metrics = ton::SpectralTelemetry::evaluate(sim_state);
+  TON_CHECK(empty_metrics ==
+            ton::SpectralTelemetry::evaluate_full_scan(sim_state));
+  TON_CHECK(empty_metrics.h_prim_slots == 0 && empty_metrics.h_back_slots == 0);
+  TON_CHECK(empty_metrics.overhead_ratio == 0.0);
+  TON_CHECK(ton::SpectralTelemetry::verify_refcounts_exact(sim_state));
+
+  const ton::Request req0{.id = 0, .src = 0, .dst = 10};
+  const ton::Request req1{.id = 1, .src = 10, .dst = 27};
+  const ton::PathSlice p0_slice = pool.find_healthy(req0.src, req0.dst);
+  const ton::PathSlice p1_slice = pool.find_healthy(req1.src, req1.dst);
+  TON_CHECK(!p0_slice.empty() && !p1_slice.empty());
+
+  const ton::PathId p0_prim = p0_slice[0];
+  const ton::PathId p1_prim = p1_slice[0];
+  TON_CHECK(sim_state.is_primary_clash_free(pool.path_arcs(p0_prim), 0));
+
+  // Find two scenarios cutting p0_prim and compute valid backup paths on G
+  // \ L(F).
+  const ton::ArcId first_a0 = pool.path_arcs(p0_prim).front();
+  const auto cutting_p0 = nobel_span.sim_scenarios_cutting_arc(first_a0);
+  TON_CHECK(cutting_p0.size() >= 2);
+  const ton::ScenarioId f_a = cutting_p0[0];
+  const ton::ScenarioId f_b = cutting_p0[1];
+
+  const ton::PathId b0_fa = pool.get_or_compute(
+      nobel_span.sim_scenario(f_a).cut_arcs, req0.src, req0.dst)[0];
+  const ton::PathSlice b0_fb_slice = pool.get_or_compute(
+      nobel_span.sim_scenario(f_b).cut_arcs, req0.src, req0.dst);
+  const ton::PathId b0_fb = b0_fb_slice[0];
+
+  // Test speculative staging, checkpoint, partial rollback, and full rollback.
+  const ton::BackupAssignment ba_fa_w31{
+      .path_id = b0_fa, .req_id = 0, .wavelength = 31};
+  const ton::BackupAssignment ba_fb_w31{
+      .path_id = b0_fb, .req_id = 0, .wavelength = 31};
+  sim_staged.stage_replace(ton::StateDomain::Sim, f_a,
+                           std::span{&ba_fa_w31, 1});
+  const auto cp = sim_staged.checkpoint();
+  sim_staged.stage_append(ton::StateDomain::Sim, f_b, ba_fb_w31);
+  TON_CHECK(sim_staged.num_deltas() == 2 && sim_staged.num_entries() == 2);
+
+  sim_staged.rollback_to(cp);
+  TON_CHECK(sim_staged.num_deltas() == 1 && sim_staged.num_entries() == 1);
+  sim_staged.rollback();
+  TON_CHECK(sim_staged.empty() && sim_state.num_admitted() == 0);
+
+  // Stage and commit req0 on lambda_0 with backups on lambda_31 in f_a and f_b.
+  sim_staged.stage_replace(ton::StateDomain::Sim, f_a,
+                           std::span{&ba_fa_w31, 1});
+  sim_staged.stage_replace(ton::StateDomain::Sim, f_b,
+                           std::span{&ba_fb_w31, 1});
+  sim_state.commit(req0, ton::Lightpath{.path_id = p0_prim, .wavelength = 0},
+                   sim_staged, pool);
+
+  TON_CHECK(sim_state.num_admitted() == 1);
+  TON_CHECK(sim_state.is_admitted(0));
+  TON_CHECK(!sim_state.is_primary_clash_free(pool.path_arcs(p0_prim), 0));
+  TON_CHECK(sim_state.is_primary_clash_free(pool.path_arcs(p0_prim), 1));
+  TON_CHECK(sim_state.find_sim_backup(f_a, 0) ==
+            (ton::Lightpath{.path_id = b0_fa, .wavelength = 31}));
+  TON_CHECK(ton::SpectralTelemetry::verify_refcounts_exact(sim_state));
+  TON_CHECK(ton::SpectralTelemetry::evaluate(sim_state) ==
+            ton::SpectralTelemetry::evaluate_full_scan(sim_state));
+
+  // Verify block-union conflict index finds f_a / f_b on wavelength 31 and none
+  // on wavelength 30.
+  std::vector<uint32_t> excl(nobel_span.sim_scenarios().size(), 0);
+  std::vector<uint32_t> visit(nobel_span.sim_scenarios().size(), 0);
+  std::vector<uint32_t> hits(nobel_span.sim_scenarios().size(), 0);
+  TON_CHECK(sim_state.has_interfering_state(
+      ton::StateDomain::Sim, pool.path_arcs(b0_fa), 31, excl, 1));
+  TON_CHECK(!sim_state.has_interfering_state(
+      ton::StateDomain::Sim, pool.path_arcs(b0_fa), 30, excl, 1));
+  const uint32_t n_hits_before = sim_state.collect_interfering_states(
+      ton::StateDomain::Sim, pool.path_arcs(b0_fa), 31, excl, 1, visit, 1,
+      hits);
+  TON_CHECK(n_hits_before >= 1);
+
+  // Commit req1 on primary (p1_prim, lambda_31) if disjoint from p0_prim (since
+  // p0_prim is on lambda_0, lambda_31 is 100% free in H_prim!) AND reconfigure
+  // req0's backup in f_b from lambda_31 to lambda_0 (creating deliberate
+  // stub-release overlap if b0_fb shares any arc with p0_prim, or pure overlap
+  // between p1_prim on lambda_31 and b0_fa on lambda_31!).
+  sim_staged.rollback();
+  const ton::BackupAssignment ba_fb_w0{
+      .path_id = b0_fb, .req_id = 0, .wavelength = 0};
+  sim_staged.stage_replace(ton::StateDomain::Sim, f_b, std::span{&ba_fb_w0, 1});
+  const ton::ScenarioId f_c =
+      nobel_span.sim_scenarios_cutting_arc(pool.path_arcs(p1_prim).front())[0];
+  const ton::PathId b1_fc = pool.get_or_compute(
+      nobel_span.sim_scenario(f_c).cut_arcs, req1.src, req1.dst)[0];
+  if (f_c != f_a && f_c != f_b) {
+    sim_staged.stage_append(
+        ton::StateDomain::Sim, f_c,
+        ton::BackupAssignment{.path_id = b1_fc, .req_id = 1, .wavelength = 30});
+  }
+  sim_state.commit(req1, ton::Lightpath{.path_id = p1_prim, .wavelength = 31},
+                   sim_staged, pool);
+
+  TON_CHECK(sim_state.find_sim_backup(f_b, 0) ==
+            (ton::Lightpath{.path_id = b0_fb, .wavelength = 0}));
+  TON_CHECK(ton::SpectralTelemetry::verify_refcounts_exact(sim_state));
+  const auto m_after = ton::SpectralTelemetry::evaluate(sim_state);
+  const auto m_scan = ton::SpectralTelemetry::evaluate_full_scan(sim_state);
+  TON_CHECK(m_after == m_scan);
+  TON_CHECK(m_after.h_pure_slots + m_after.h_stub_slots ==
+            m_after.h_back_slots);
+  TON_CHECK(std::abs(m_after.u_total_pct -
+                     (m_after.u_prim_pct + m_after.u_pure_pct)) < 1e-12);
+  TON_CHECK(std::abs(m_after.overhead_ratio -
+                     static_cast<double>(m_after.h_pure_slots) /
+                         static_cast<double>(m_after.h_prim_slots)) < 1e-12);
+
+  // Verify CSV schema matches PLAN.md Section 5.1 (16 exact columns).
+  std::ostringstream oss;
+  ton::SpectralTelemetry::write_csv_header(oss);
+  ton::SpectralTelemetry::write_csv_row(oss,
+                                        ton::StepRecord{
+                                            .t = 1,
+                                            .src = req1.src,
+                                            .dst = req1.dst,
+                                            .admitted = true,
+                                            .latency_us = 4.25,
+                                            .k_adm = sim_state.num_admitted(),
+                                            .spectral = m_after,
+                                        });
+  const std::string csv_str = oss.str();
+  TON_CHECK(csv_str.starts_with(
+      "t,src,dst,admitted,latency_us,k_adm,h_prim_slots,h_back_slots,"
+      "h_pure_slots,h_stub_slots,u_prim_pct,u_back_pct,u_pure_pct,"
+      "u_stub_pct,u_total_pct,overhead_ratio\n1,"));
+
+  sim_state.reset();
+  TON_CHECK(sim_state.num_admitted() == 0);
+  TON_CHECK(ton::SpectralTelemetry::verify_refcounts_exact(sim_state));
+  TON_CHECK(ton::SpectralTelemetry::evaluate(sim_state).h_back_slots == 0);
+
+  // 2. Full-scale Sequential NetworkState on Germany50 Directional (176 Stage-1
+  // units + 30,756 Stage-2 scenarios) and < 0.5 us telemetry benchmark.
+  const auto germany = ton::Graph::from_sndlib_xml(
+      repo_root() / "data" / "topologies" / "germany50.xml");
+  const auto germany_dir =
+      ton::ScenarioSet::enumerate(germany, ton::CutModel::Directional);
+  ton::PathPool g_pool(germany, ton::DistanceMetric::GeographicKm, 0.10, 10);
+
+  ton::NetworkState seq_state(germany, germany_dir,
+                              ton::FailureRegime::Sequential, 32);
+  auto seq_staged = ton::StagedAssignments::for_regime(
+      germany_dir, ton::FailureRegime::Sequential, 32);
+
+  const ton::Request greq{.id = 0, .src = 3, .dst = 16};
+  const ton::PathId g_prim = g_pool.get_or_compute_healthy(3, 16)[0];
+  const ton::ArcId g_cut_arc = g_pool.path_arcs(g_prim).front();
+  const ton::FailureUnitId gx1 = germany_dir.arc_to_unit(g_cut_arc);
+  TON_CHECK(germany_dir.is_active_stage1_unit(gx1));
+
+  const ton::PathId g_s1_bak =
+      g_pool.get_or_compute(germany_dir.unit_cut_arcs(gx1), 3, 16)[0];
+  const ton::BackupAssignment s1_ba{
+      .path_id = g_s1_bak, .req_id = 0, .wavelength = 31};
+  seq_staged.stage_replace(ton::StateDomain::SeqStage1, gx1,
+                           std::span{&s1_ba, 1});
+
+  for (const auto& seq_sc : germany_dir.seq_group(gx1)) {
+    const ton::PathId s2_pid =
+        g_pool.path_intersects(g_s1_bak, seq_sc.stage2_cut)
+            ? g_pool.get_or_compute(seq_sc.total_cut, 3, 16)[0]
+            : g_s1_bak;
+    seq_staged.stage_append(
+        ton::StateDomain::SeqStage2, seq_sc.id,
+        ton::BackupAssignment{
+            .path_id = s2_pid, .req_id = 0, .wavelength = 31});
+  }
+
+  seq_state.commit(greq, ton::Lightpath{.path_id = g_prim, .wavelength = 0},
+                   seq_staged, g_pool);
+  TON_CHECK(ton::SpectralTelemetry::verify_refcounts_exact(seq_state));
+  TON_CHECK(ton::SpectralTelemetry::evaluate(seq_state) ==
+            ton::SpectralTelemetry::evaluate_full_scan(seq_state));
+
+  // Benchmark 2,000 L1 spectral evaluations on Germany50 (M=176, W=32).
+  uint64_t sink = 0;
+  constexpr int kIters = 2000;
+  const auto t0 = std::chrono::steady_clock::now();
+  for (int i = 0; i < kIters; ++i) {
+    const auto sm = ton::SpectralTelemetry::evaluate(seq_state);
+    sink += sm.h_prim_slots + sm.h_pure_slots;
+  }
+  const auto t1 = std::chrono::steady_clock::now();
+  TON_CHECK(sink > 0);
+  const double avg_us =
+      std::chrono::duration<double, std::micro>(t1 - t0).count() / kIters;
+#if defined(NDEBUG)
+  TON_CHECK_MSG(avg_us < 0.5,
+                "Release SpectralTelemetry::evaluate exceeded 0.5 us budget");
+#else
+  TON_CHECK(avg_us < 50.0);
+#endif
+}
+
 }  // namespace
 
 int main() {
@@ -603,6 +826,7 @@ int main() {
   test_symmetric_digraph_and_sndlib_xml();
   test_dual_cut_scenarios_and_tarjan_scc();
   test_yen_path_pool_and_lexicographic_ties();
+  test_network_state_staging_and_telemetry();
   std::cout << "[PASS] All ToN C++23 unit tests passed.\n";
   return EXIT_SUCCESS;
 }
