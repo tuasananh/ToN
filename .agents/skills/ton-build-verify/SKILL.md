@@ -47,3 +47,4 @@ Or execute the compiled binary directly:
 2. Exact scenario counts for `Nobel-EU` and `Germany50` are verified against `PROBLEM.md` Section 3.2.
 3. Sanitizer run reports zero AddressSanitizer or UndefinedBehaviorSanitizer errors.
 4. Git commit is executed upon clean pass.
+

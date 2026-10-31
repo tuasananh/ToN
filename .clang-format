@@ -18,3 +18,4 @@ BreakBeforeBraces: Attach
 IncludeBlocks: Regroup
 SortIncludes: CaseSensitive
 ...
+

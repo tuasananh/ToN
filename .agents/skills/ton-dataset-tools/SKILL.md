@@ -46,3 +46,4 @@ data/
    cd data/streams && sha256sum -c manifest.sha256
    ```
 3. **Reproducibility:** Seed 1..28 must match exact MT19937 PRNG sequences.
+

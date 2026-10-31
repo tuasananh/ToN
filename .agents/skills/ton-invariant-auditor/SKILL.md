@@ -40,3 +40,4 @@ Or run the Python verification script:
 .venv/bin/python scripts/analyze_results.py --verify-invariants --results-dir results/summaries/
 ```
 Zero tolerance: any single invariant violation invalidates the run and requires debugging before proceeding.
+

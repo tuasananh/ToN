@@ -63,9 +63,16 @@ Before declaring any phase complete or moving to the next phase in `PLAN.md`, th
    - Full automated auditor confirms 100% compliance with `INV-1` through `INV-5`.
    - Fuzz testing with random disruptions finds zero undetected invariant violations.
 
-5. **Clean Git Commit:**
-   - Every completed sub-phase must be committed with a descriptive git message before proceeding:
-     `git commit -m "feat(phase-X): <concise summary of tested deliverable>"`
+5. **Atomic, Bite-Sized Commit Protocol (Mandatory):**
+   - **Never make monolithic multi-file phase dumps.** Break every phase down into bite-sized, atomic micro-deliverables.
+   - Commit immediately whenever a discrete unit, test, or sub-component passes verification.
+   - Every commit must leave the repository in a **working, passing state** (tests pass, zero warnings).
+   - Use standard Conventional Commits:
+     - `test(phase-X): <add unit tests or assertion checks for component Y>`
+     - `feat(phase-X): <implement component Y matching spec>`
+     - `fix(phase-X): <resolve specific bug or assertion failure in Y>`
+     - `refactor(phase-X): <optimize memory or performance without changing behavior>`
+     - `chore(phase-X): <freeze datasets, manifests, or update ledger>`
 
 ---
 
@@ -74,3 +81,4 @@ Before declaring any phase complete or moving to the next phase in `PLAN.md`, th
 - Always use the dedicated virtual environment:
   `.venv/bin/python <script_path>` (or `source .venv/bin/activate`).
 - Python is used strictly offline for SNDlib ingestion, PRNG stream freezing, Wilcoxon statistical tests, and LaTeX/figure generation.
+
