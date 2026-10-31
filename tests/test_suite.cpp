@@ -20,6 +20,7 @@
 #include "ton/core/scenarios.hpp"
 #include "ton/core/types.hpp"
 #include "ton/orchestration/network_state.hpp"
+#include "ton/orchestration/seq_orchestrator.hpp"
 #include "ton/orchestration/sim_orchestrator.hpp"
 #include "ton/orchestration/staging_arena.hpp"
 #include "ton/orchestration/telemetry.hpp"
@@ -1567,6 +1568,352 @@ void test_sim_orchestrator_on_nobel_eu() {
   audit_simultaneous_state_invariants(nr_sim_state, pool);
 }
 
+void audit_sequential_state_invariants(const ton::NetworkState& state,
+                                       const ton::PathPool& pool) {
+  TON_CHECK(state.regime() == ton::FailureRegime::Sequential);
+  const auto& g = state.graph();
+  const auto& sc_set = state.scenarios();
+  const ton::ArcId m = g.num_arcs();
+
+  // INV-1: Primary Clash Conservation & healthy (kappa, K_max) admissibility.
+  std::vector<ton::WavelengthMask> prim_occ(m, ton::EMPTY_MASK);
+  for (const ton::RequestId r : state.admitted_ids()) {
+    TON_CHECK(state.is_admitted(r));
+    const ton::Request& req = state.request(r);
+    const ton::Lightpath lp = state.primary_lightpath(r);
+    TON_CHECK(lp.valid());
+
+    const ton::PathSlice cand = pool.find_healthy(req.src, req.dst);
+    bool in_pool = false;
+    for (const ton::PathId pid : cand) {
+      if (pid == lp.path_id) {
+        in_pool = true;
+        break;
+      }
+    }
+    TON_CHECK(in_pool);
+
+    const ton::WavelengthMask bit = ton::wavelength_bit(lp.wavelength);
+    for (const ton::ArcId a : pool.path_arcs(lp.path_id)) {
+      TON_CHECK((prim_occ[a] & bit) == 0u);
+      TON_CHECK(state.primary_owner(a, lp.wavelength) == r);
+      prim_occ[a] |= bit;
+    }
+  }
+  for (ton::ArcId a = 0; a < m; ++a) {
+    TON_CHECK(prim_occ[a] == state.primary_mask(a));
+  }
+
+  // Verify non-active Stage-1 units hold zero backup state.
+  for (ton::FailureUnitId u = 0; u < sc_set.num_units(); ++u) {
+    if (!sc_set.is_active_stage1_unit(u)) {
+      TON_CHECK(state.seq_stage1_backups(u).empty());
+      for (ton::ArcId a = 0; a < m; ++a) {
+        TON_CHECK(state.seq_stage1_backup_mask(u, a) == ton::EMPTY_MASK);
+      }
+    }
+  }
+
+  std::vector<ton::WavelengthMask> scen_occ(m, ton::EMPTY_MASK);
+  std::vector<ton::WavelengthMask> back_only(m, ton::EMPTY_MASK);
+  std::vector<ton::Lightpath> s1_lp_by_req(state.max_requests(),
+                                           ton::Lightpath{});
+  size_t audited_s2_count = 0;
+
+  // INV-2, INV-3, INV-4, INV-5 across all active Stage-1 units x1 in E_1 and
+  // coupled Stage-2 groups G_{x1} in F_seq.
+  for (const ton::FailureUnitId x1 : sc_set.active_stage1_units()) {
+    const ton::CutArcs& s1_cut = sc_set.unit_cut_arcs(x1);
+    std::fill(scen_occ.begin(), scen_occ.end(), ton::EMPTY_MASK);
+    std::fill(back_only.begin(), back_only.end(), ton::EMPTY_MASK);
+    std::fill(s1_lp_by_req.begin(), s1_lp_by_req.end(), ton::Lightpath{});
+
+    uint32_t expected_s1_disrupted = 0;
+    for (const ton::RequestId r : state.admitted_ids()) {
+      const ton::Lightpath prim = state.primary_lightpath(r);
+      if (!pool.path_intersects(prim.path_id, s1_cut)) {
+        // Surviving Stage-1 primary is protected (INV-5).
+        TON_CHECK(!state.find_seq_stage1_backup(x1, r).valid());
+        const ton::WavelengthMask bit = ton::wavelength_bit(prim.wavelength);
+        for (const ton::ArcId a : pool.path_arcs(prim.path_id)) {
+          scen_occ[a] |= bit;
+        }
+      } else {
+        ++expected_s1_disrupted;
+      }
+    }
+
+    const auto s1_backups = state.seq_stage1_backups(x1);
+    TON_CHECK(s1_backups.size() == expected_s1_disrupted);
+
+    for (const auto& ba : s1_backups) {
+      TON_CHECK(ba.valid() && state.is_admitted(ba.req_id));
+      TON_CHECK(!s1_lp_by_req[ba.req_id].valid());
+      s1_lp_by_req[ba.req_id] = ba.lightpath();
+
+      const ton::Request& req = state.request(ba.req_id);
+      const ton::Lightpath prim = state.primary_lightpath(ba.req_id);
+      TON_CHECK(pool.path_intersects(prim.path_id, s1_cut));
+      TON_CHECK(!pool.path_intersects(ba.path_id, s1_cut));  // INV-3
+
+      const ton::PathSlice cand = pool.find(s1_cut, req.src, req.dst);
+      bool in_pool = false;
+      for (const ton::PathId pid : cand) {
+        if (pid == ba.path_id) {
+          in_pool = true;
+          break;
+        }
+      }
+      TON_CHECK(in_pool);
+
+      const ton::WavelengthMask bit = ton::wavelength_bit(ba.wavelength);
+      for (const ton::ArcId a : pool.path_arcs(ba.path_id)) {
+        TON_CHECK((scen_occ[a] & bit) == 0u);  // INV-2 & INV-5
+        scen_occ[a] |= bit;
+        back_only[a] |= bit;
+      }
+    }
+
+    for (ton::ArcId a = 0; a < m; ++a) {
+      TON_CHECK(back_only[a] == state.seq_stage1_backup_mask(x1, a));
+    }
+
+    // Coupled Stage-2 group G_{x1} = {(x1, x2) in F_seq}.
+    for (const auto& sc : sc_set.seq_group(x1)) {
+      TON_CHECK(sc.x1 == x1);
+      ++audited_s2_count;
+
+      std::fill(scen_occ.begin(), scen_occ.end(), ton::EMPTY_MASK);
+      std::fill(back_only.begin(), back_only.end(), ton::EMPTY_MASK);
+
+      uint32_t expected_s2_disrupted = 0;
+      for (const ton::RequestId r : state.admitted_ids()) {
+        const ton::Lightpath prim = state.primary_lightpath(r);
+        if (!pool.path_intersects(prim.path_id, sc.total_cut)) {
+          TON_CHECK(!state.find_seq_stage2_backup(sc.id, r).valid());
+          const ton::WavelengthMask bit = ton::wavelength_bit(prim.wavelength);
+          for (const ton::ArcId a : pool.path_arcs(prim.path_id)) {
+            scen_occ[a] |= bit;
+          }
+        } else {
+          ++expected_s2_disrupted;
+        }
+      }
+
+      const auto s2_backups = state.seq_stage2_backups(sc.id);
+      TON_CHECK(s2_backups.size() == expected_s2_disrupted);
+
+      for (const auto& ba : s2_backups) {
+        TON_CHECK(ba.valid() && state.is_admitted(ba.req_id));
+        const ton::Request& req = state.request(ba.req_id);
+        const ton::Lightpath prim = state.primary_lightpath(ba.req_id);
+        TON_CHECK(pool.path_intersects(prim.path_id, sc.total_cut));
+        TON_CHECK(!pool.path_intersects(ba.path_id, sc.total_cut));
+
+        // INV-3 & INV-4: If r was severed by x1 and its shared Stage-1 backup
+        // avoids L_cut(x2), Stage 2 MUST preserve pi^s1_r(x1) unchanged!
+        bool locked_from_stage1 = false;
+        if (pool.path_intersects(prim.path_id, sc.stage1_cut)) {
+          const ton::Lightpath s1_lp = s1_lp_by_req[ba.req_id];
+          TON_CHECK(s1_lp.valid());
+          if (!pool.path_intersects(s1_lp.path_id, sc.stage2_cut)) {
+            TON_CHECK_MSG(ba.lightpath() == s1_lp,
+                          "INV-4 violation: surviving Stage-1 backup altered "
+                          "during Stage 2");
+            locked_from_stage1 = true;
+          }
+        } else {
+          TON_CHECK(pool.path_intersects(prim.path_id, sc.stage2_cut));
+        }
+
+        const ton::PathSlice cand = pool.find(sc.total_cut, req.src, req.dst);
+        const auto ba_arcs = pool.path_arcs(ba.path_id);
+        bool in_pool = false;
+        for (const ton::PathId pid : cand) {
+          if (locked_from_stage1) {
+            const auto cand_arcs = pool.path_arcs(pid);
+            if (cand_arcs.size() == ba_arcs.size() &&
+                std::equal(cand_arcs.begin(), cand_arcs.end(),
+                           ba_arcs.begin())) {
+              in_pool = true;
+              break;
+            }
+          } else if (pid == ba.path_id) {
+            in_pool = true;
+            break;
+          }
+        }
+        TON_CHECK(in_pool);
+
+        const ton::WavelengthMask bit = ton::wavelength_bit(ba.wavelength);
+        for (const ton::ArcId a : pool.path_arcs(ba.path_id)) {
+          TON_CHECK((scen_occ[a] & bit) == 0u);  // INV-2 & INV-5
+          scen_occ[a] |= bit;
+          back_only[a] |= bit;
+        }
+      }
+
+      for (ton::ArcId a = 0; a < m; ++a) {
+        TON_CHECK(back_only[a] == state.seq_stage2_backup_mask(sc.id, a));
+      }
+    }
+  }
+
+  TON_CHECK(audited_s2_count == sc_set.seq_scenarios().size());
+  TON_CHECK(ton::SpectralTelemetry::verify_refcounts_exact(state));
+  TON_CHECK(ton::SpectralTelemetry::evaluate(state) ==
+            ton::SpectralTelemetry::evaluate_full_scan(state));
+}
+
+void test_seq_orchestrator_on_nobel_and_germany() {
+  // 1. Nobel-EU Span Sequential cuts: SeqRDF, GreedySeqRDF, and NoRerouteSeqRDF
+  //    (with strict Stage-1 + Stage-2 immutability verification).
+  const auto nobel = ton::Graph::from_sndlib_xml(repo_root() / "data" /
+                                                 "topologies" / "nobel-eu.xml");
+  const auto nobel_span =
+      ton::ScenarioSet::enumerate(nobel, ton::CutModel::Span);
+  const auto n_stream = load_request_stream_csv(
+      repo_root() / "data" / "streams" / "nobel_eu_realistic_seed_01.csv", 260);
+  TON_CHECK(n_stream.size() == 260);
+
+  ton::PathPool n_pool(nobel, ton::DistanceMetric::GeographicKm, 0.10, 10);
+  n_pool.prewarm_for_stream(n_stream, nobel_span);
+
+  // 1a. SeqRDF (DsaturSolver)
+  ton::NetworkState seq_rdf_state(nobel, nobel_span,
+                                  ton::FailureRegime::Sequential, 260);
+  ton::SeqOrchestrator<ton::DsaturSolver> seq_rdf(nobel, nobel_span, n_pool,
+                                                  260);
+  uint32_t seq_rdf_denied = 0;
+  for (const auto& req : n_stream) {
+    const auto prev_metrics = ton::SpectralTelemetry::evaluate(seq_rdf_state);
+    const uint16_t prev_adm = seq_rdf_state.num_admitted();
+    const auto res = seq_rdf.admit_request(req, seq_rdf_state);
+    if (!res.admitted) {
+      ++seq_rdf_denied;
+      TON_CHECK(seq_rdf_state.num_admitted() == prev_adm);
+      TON_CHECK(ton::SpectralTelemetry::evaluate(seq_rdf_state) ==
+                prev_metrics);
+    }
+  }
+  TON_CHECK(seq_rdf_state.num_admitted() > 50 && seq_rdf_denied > 0);
+  audit_sequential_state_invariants(seq_rdf_state, n_pool);
+
+  // Verify deterministic repeatability after reset().
+  const uint16_t first_adm = seq_rdf_state.num_admitted();
+  const auto first_metrics = ton::SpectralTelemetry::evaluate(seq_rdf_state);
+  seq_rdf_state.reset();
+  seq_rdf.reset();
+  for (const auto& req : n_stream) {
+    (void)seq_rdf.admit_request(req, seq_rdf_state);
+  }
+  TON_CHECK(seq_rdf_state.num_admitted() == first_adm);
+  TON_CHECK(ton::SpectralTelemetry::evaluate(seq_rdf_state) == first_metrics);
+
+  // 1b. GreedySeqRDF (GreedySolver)
+  ton::NetworkState greedy_seq_state(nobel, nobel_span,
+                                     ton::FailureRegime::Sequential, 260);
+  ton::SeqOrchestrator<ton::GreedySolver> greedy_seq(nobel, nobel_span, n_pool,
+                                                     260);
+  for (const auto& req : n_stream) {
+    (void)greedy_seq.admit_request(req, greedy_seq_state);
+  }
+  TON_CHECK(greedy_seq_state.num_admitted() > 50);
+  audit_sequential_state_invariants(greedy_seq_state, n_pool);
+
+  // 1c. NoRerouteSeqRDF (NoRerouteSolver) + strict Stage-1 & Stage-2 freeze
+  //     check.
+  ton::NetworkState nr_seq_state(nobel, nobel_span,
+                                 ton::FailureRegime::Sequential, 260);
+  ton::SeqOrchestrator<ton::NoRerouteSolver> nr_seq(nobel, nobel_span, n_pool,
+                                                    260);
+
+  struct FrozenSeqRecord {
+    ton::StateDomain domain;
+    uint32_t state_id;
+    ton::RequestId r;
+    ton::Lightpath lp;
+  };
+  std::vector<FrozenSeqRecord> frozen_seq;
+
+  for (const auto& req : n_stream) {
+    const auto res = nr_seq.admit_request(req, nr_seq_state);
+    if (res.admitted) {
+      for (const ton::FailureUnitId x1 : nobel_span.active_stage1_units()) {
+        if (n_pool.path_intersects(res.primary.path_id,
+                                   nobel_span.unit_cut_arcs(x1))) {
+          const ton::Lightpath lp =
+              nr_seq_state.find_seq_stage1_backup(x1, req.id);
+          TON_CHECK(lp.valid());
+          frozen_seq.push_back(FrozenSeqRecord{
+              .domain = ton::StateDomain::SeqStage1,
+              .state_id = x1,
+              .r = req.id,
+              .lp = lp,
+          });
+        }
+      }
+      for (const auto& sc : nobel_span.seq_scenarios()) {
+        if (n_pool.path_intersects(res.primary.path_id, sc.total_cut)) {
+          const ton::Lightpath lp =
+              nr_seq_state.find_seq_stage2_backup(sc.id, req.id);
+          TON_CHECK(lp.valid());
+          frozen_seq.push_back(FrozenSeqRecord{
+              .domain = ton::StateDomain::SeqStage2,
+              .state_id = sc.id,
+              .r = req.id,
+              .lp = lp,
+          });
+        }
+      }
+    }
+  }
+  std::cout << "[INFO] Nobel-EU Seq (N=260): SeqRDF="
+            << seq_rdf_state.num_admitted()
+            << ", GreedySeqRDF=" << greedy_seq_state.num_admitted()
+            << ", NoRerouteSeqRDF=" << nr_seq_state.num_admitted() << "\n";
+  // NoRerouteSeqRDF suffers severe Stage-1 -> Stage-2 lock-in collisions
+  // (algorithms/NO_REROUTE_BASELINE.md Section 2.2), admitting far fewer
+  // requests than dynamic-reconfiguration SeqRDF and GreedySeqRDF.
+  TON_CHECK(nr_seq_state.num_admitted() >= 10);
+  TON_CHECK(seq_rdf_state.num_admitted() > nr_seq_state.num_admitted());
+  TON_CHECK(greedy_seq_state.num_admitted() > nr_seq_state.num_admitted());
+  for (const auto& rec : frozen_seq) {
+    if (rec.domain == ton::StateDomain::SeqStage1) {
+      TON_CHECK(nr_seq_state.find_seq_stage1_backup(
+                    static_cast<ton::FailureUnitId>(rec.state_id), rec.r) ==
+                rec.lp);
+    } else {
+      TON_CHECK(nr_seq_state.find_seq_stage2_backup(rec.state_id, rec.r) ==
+                rec.lp);
+    }
+  }
+  audit_sequential_state_invariants(nr_seq_state, n_pool);
+
+  // 2. Germany50 Span Sequential cuts (88 Stage-1 units, 7,634 Stage-2
+  //    scenarios): verify SeqRDF satisfies all 5 invariants at scale.
+  const auto germany = ton::Graph::from_sndlib_xml(
+      repo_root() / "data" / "topologies" / "germany50.xml");
+  const auto germany_span =
+      ton::ScenarioSet::enumerate(germany, ton::CutModel::Span);
+  const auto g_stream = load_request_stream_csv(
+      repo_root() / "data" / "streams" / "germany50_1d1m_seed_01.csv", 120);
+  TON_CHECK(g_stream.size() == 120);
+
+  ton::PathPool g_pool(germany, ton::DistanceMetric::GeographicKm, 0.10, 10);
+  g_pool.prewarm_for_stream(g_stream, germany_span);
+
+  ton::NetworkState g_seq_state(germany, germany_span,
+                                ton::FailureRegime::Sequential, 120);
+  ton::SeqOrchestrator<ton::DsaturSolver> g_seq_rdf(germany, germany_span,
+                                                    g_pool, 120);
+  for (const auto& req : g_stream) {
+    (void)g_seq_rdf.admit_request(req, g_seq_state);
+  }
+  TON_CHECK(g_seq_state.num_admitted() > 50);
+  audit_sequential_state_invariants(g_seq_state, g_pool);
+}
+
 }  // namespace
 
 int main() {
@@ -1577,6 +1924,7 @@ int main() {
   test_network_state_staging_and_telemetry();
   test_inner_solvers_and_dsatur_theorems();
   test_sim_orchestrator_on_nobel_eu();
+  test_seq_orchestrator_on_nobel_and_germany();
   std::cout << "[PASS] All ToN C++23 unit tests passed.\n";
   return EXIT_SUCCESS;
 }
