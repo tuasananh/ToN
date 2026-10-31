@@ -89,6 +89,7 @@ add_executable(
         tests/test_sim_orchestrator.cpp
         tests/test_seq_orchestrator.cpp
         tests/test_phase3_gate.cpp
+        tests/test_invariant_auditor.cpp
 )
 target_include_directories(ton_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 target_link_libraries(ton_tests PRIVATE ton_core catch2_amalgamated)
