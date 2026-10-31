@@ -277,6 +277,20 @@ void test_dual_cut_scenarios_and_tarjan_scc() {
       }
     }
     TON_CHECK(total_grouped == sc_set.seq_scenarios().size());
+
+    // 4. Verify reverse arc indices for both simultaneous and sequential
+    // Stage-2 cuts (Finding P2B-1).
+    for (ton::ArcId a = 0; a < g.num_arcs(); ++a) {
+      for (const ton::ScenarioId sim_id : sc_set.sim_scenarios_cutting_arc(a)) {
+        const auto& sc = sc_set.sim_scenario(sim_id);
+        TON_CHECK(sc.cut_arcs.contains(a));
+      }
+      for (const ton::ScenarioId seq_id :
+           sc_set.seq_scenarios_stage2_cutting_arc(a)) {
+        const auto& sc = sc_set.seq_scenario(seq_id);
+        TON_CHECK(sc.stage2_cut.contains(a));
+      }
+    }
   }
 }
 
