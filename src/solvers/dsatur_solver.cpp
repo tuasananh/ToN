@@ -5,21 +5,6 @@
 
 namespace ton {
 
-namespace {
-
-[[nodiscard]] inline bool same_physical_path(const PathPool& pool, PathId a,
-                                             PathId b) noexcept {
-  if (a == b) {
-    return true;
-  }
-  const auto arcs_a = pool.path_arcs(a);
-  const auto arcs_b = pool.path_arcs(b);
-  return arcs_a.size() == arcs_b.size() &&
-         std::equal(arcs_a.begin(), arcs_a.end(), arcs_b.begin());
-}
-
-}  // namespace
-
 SolverStatus DsaturSolver::solve(const DegradedSubproblem& subproblem,
                                  SolverScratchpad& scratchpad,
                                  StagedAssignments& staged) const noexcept {

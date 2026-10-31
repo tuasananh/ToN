@@ -11,6 +11,9 @@ SolverStatus NoRerouteSolver::solve(const DegradedSubproblem& subproblem,
              "NoRerouteSolver requires non-null PathPool");
   TON_ASSERT(subproblem.disrupted.size() <= 1u,
              "NoRerouteSolver evaluates at most 1 incoming request {k}");
+  if (subproblem.disrupted.size() > 1u) [[unlikely]] {
+    return SolverStatus::Infeasible;
+  }
 
   const PathPool& pool = *subproblem.path_pool;
   const auto m = static_cast<ArcId>(subproblem.locked_masks.size());
@@ -42,6 +45,12 @@ SolverStatus NoRerouteSolver::solve(const DegradedSubproblem& subproblem,
   }
 
   const Request& req = subproblem.disrupted[0].req;
+  for (const BackupAssignment& fb : subproblem.fixed_backups) {
+    if (fb.req_id == req.id) [[unlikely]] {
+      TON_ASSERT(false, "fixed_backups already contains incoming request id");
+      return SolverStatus::Infeasible;
+    }
+  }
   const PathSlice routes = pool.find(subproblem.cut_arcs, req.src, req.dst);
   if (routes.empty()) {
     return SolverStatus::Infeasible;

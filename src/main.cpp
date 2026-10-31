@@ -35,13 +35,7 @@ void print_usage(std::ostream& os, std::string_view prog) {
 
 void write_steps_atomic(const std::filesystem::path& out_path,
                         std::span<const ton::StepRecord> records) {
-  if (out_path.has_parent_path()) {
-    std::filesystem::create_directories(out_path.parent_path());
-  }
-  std::filesystem::path tmp_path = out_path;
-  tmp_path += ".tmp";
-  ton::SpectralTelemetry::write_step_records_csv(tmp_path, records);
-  std::filesystem::rename(tmp_path, out_path);
+  ton::SpectralTelemetry::write_step_records_csv(out_path, records);
 }
 
 }  // namespace

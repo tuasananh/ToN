@@ -54,6 +54,51 @@ TEST_CASE("Phase 3 Gate: 6-Algorithm Harness & Zero-Allocation Online Loop",
     }
   }
 
+  SECTION("Nobel-EU Directional cut stream verification (Finding F-05)") {
+    const auto nobel_dir =
+        ton::ScenarioSet::enumerate(nobel, ton::CutModel::Directional);
+    const auto n_dir_stream = ton::load_request_stream_csv(
+        ton::test::repo_root() / "data" / "streams" /
+            "nobel_eu_realistic_seed_01.csv",
+        100);
+    REQUIRE(n_dir_stream.size() == 100);
+
+    ton::PathPool n_dir_pool(nobel, ton::DistanceMetric::GeographicKm, 0.10,
+                             10);
+    n_dir_pool.prewarm_for_stream(n_dir_stream, nobel_dir);
+
+    for (const ton::AlgorithmId alg : ton::ALL_ALGORITHMS) {
+      ton::OnlineLoopHooks hooks{};
+      if (!ton::test::is_asan_active()) {
+        hooks.on_before_loop = ton::test::arm_zero_alloc_monitor;
+        hooks.on_after_loop = ton::test::disarm_zero_alloc_monitor;
+      }
+
+      const ton::ProvisioningRunResult result = ton::run_provisioning_algorithm(
+          alg, nobel, nobel_dir, n_dir_pool, n_dir_stream, hooks);
+
+      if (!ton::test::is_asan_active()) {
+        REQUIRE(ton::test::tracked_allocations() == 0);
+      }
+
+      REQUIRE(result.records.size() == 100);
+      REQUIRE(result.summary.num_requests == 100);
+      REQUIRE(result.summary.total_granted > 0);
+      REQUIRE(result.summary.refcounts_exact);
+
+      REQUIRE(ton::SpectralTelemetry::verify_refcounts_exact(result.state));
+      REQUIRE(ton::SpectralTelemetry::evaluate(result.state) ==
+              ton::SpectralTelemetry::evaluate_full_scan(result.state));
+
+      if (ton::algorithm_regime(alg) == ton::FailureRegime::Simultaneous) {
+        ton::test::audit_simultaneous_state_invariants(result.state,
+                                                       n_dir_pool);
+      } else {
+        ton::test::audit_sequential_state_invariants(result.state, n_dir_pool);
+      }
+    }
+  }
+
   SECTION("Germany50 Span multi-algorithm scale verification") {
     const auto germany = ton::Graph::from_sndlib_xml(
         ton::test::repo_root() / "data" / "topologies" / "germany50.xml");

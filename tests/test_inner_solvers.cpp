@@ -166,10 +166,12 @@ ton::SolverStatus brute_force_dsatur_oracle(
               static_cast<double>(overlap_sum) / static_cast<double>(wp[u]);
         }
 
-        const double churn = (old_lp.valid() &&
-                              (old_lp.path_id != pid || old_lp.wavelength != w))
-                                 ? ton::DsaturSolver::kBetaInertia
-                                 : 0.0;
+        const double churn =
+            (old_lp.valid() &&
+             (old_lp.wavelength != w ||
+              !ton::same_physical_path(pool, old_lp.path_id, pid)))
+                ? ton::DsaturSolver::kBetaInertia
+                : 0.0;
 
         const ton::CandidateScore sc{
             .total_damage = damage + churn,
@@ -496,4 +498,66 @@ TEST_CASE(
     REQUIRE(n_scratch.theorem1_bypass_steps > 0);
     REQUIRE(n_scratch.theorem1_fc_checked_steps > 0);
   }
+}
+
+TEST_CASE("Inner Solvers: Empty Candidate Path Handling (Finding F-06)",
+          "[solvers][infeasible]") {
+  const std::vector<ton::NodeInfo> nodes{
+      {.id = 0, .name = "N0", .lon_deg = 0.0, .lat_deg = 0.0},
+      {.id = 1, .name = "N1", .lon_deg = 1.0, .lat_deg = 0.0},
+      {.id = 2, .name = "N2", .lon_deg = 2.0, .lat_deg = 0.0},
+  };
+  const std::vector<ton::SpanInput> spans{
+      {.name = "S0", .u = 0, .v = 1, .override_length_km = 10.0},
+      {.name = "S1", .u = 1, .v = 2, .override_length_km = 10.0},
+  };
+  const ton::Graph line_graph("line", nodes, spans);
+  ton::PathPool pool(line_graph, ton::DistanceMetric::HopCount, 0.10, 10);
+
+  // Sever the only link between 1 and 2 so that no path exists between 0 and 2.
+  ton::CutArcs full_cut;
+  full_cut.add_unique(line_graph.find_arc(1, 2));
+  full_cut.add_unique(line_graph.find_arc(2, 1));
+
+  const ton::PathSlice empty_routes = pool.find(full_cut, 0, 2);
+  REQUIRE(empty_routes.empty());
+
+  const std::vector<ton::WavelengthMask> locked(line_graph.num_arcs(),
+                                                ton::EMPTY_MASK);
+  const std::vector<ton::DisruptedRequest> disrupted{
+      ton::DisruptedRequest{
+          .req = {.id = 42, .src = 0, .dst = 2},
+          .old_backup = {},
+      },
+  };
+
+  const ton::DegradedSubproblem sub{
+      .path_pool = &pool,
+      .cut_arcs = full_cut,
+      .domain = ton::StateDomain::Sim,
+      .state_id = 0,
+      .locked_masks = locked,
+      .fixed_backups = {},
+      .disrupted = disrupted,
+  };
+
+  ton::SolverScratchpad scratch(line_graph.num_arcs(), 10);
+  ton::StagedAssignments staged(16, 64);
+
+  const ton::NoRerouteSolver no_reroute;
+  const ton::GreedySolver greedy;
+  const ton::DsaturSolver dsatur;
+
+  staged.rollback();
+  REQUIRE(no_reroute.solve(sub, scratch, staged) ==
+          ton::SolverStatus::Infeasible);
+  REQUIRE(staged.empty());
+
+  staged.rollback();
+  REQUIRE(greedy.solve(sub, scratch, staged) == ton::SolverStatus::Infeasible);
+  REQUIRE(staged.empty());
+
+  staged.rollback();
+  REQUIRE(dsatur.solve(sub, scratch, staged) == ton::SolverStatus::Infeasible);
+  REQUIRE(staged.empty());
 }

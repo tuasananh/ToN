@@ -87,8 +87,8 @@ Because $W = 32$, every link's wavelength occupancy maps 1-to-1 onto an exact 32
 2. **L3-Resident Scenario Bitmasks (`20.65 MiB` at Maximum Scale):**
    - `backup_mask[num_scenarios * M]`: Flat contiguous `uint32_t` buffer wrapped in `std::mdspan`. Even for $30,756$ scenarios $\times 176$ arcs, this buffer is **$20.65\text{ MiB}$**—fitting comfortably inside the i9-13900HX's **$36\text{ MiB}$ L3 cache**.
    - Stage-1 sequential masks (`176 * 176 * 4 B = 124 KB`) reside permanently in L2 cache.
-3. **Sparse Compact Per-Scenario Allocation Lists (`~2.7 MiB` vs. `693 MB` Dense Table):**
-   - Instead of allocating a dense `30,756 x 176 x 32` occupant table (`346–693 MB`), each scenario $f$ stores only its active backup assignments as compact $6$-byte records `(uint16_t req_id, uint16_t path_id, uint8_t wavelength)` ($\sim 15$ disrupted requests/scenario $\times 6\text{ B} \times 30,756 \approx \mathbf{2.7\text{ MiB}}$).
+3. **Sparse Compact Per-Scenario Allocation Lists (`~3.6 MiB` vs. `693 MB` Dense Table):**
+   - Instead of allocating a dense `30,756 x 176 x 32` occupant table (`346–693 MB`), each scenario $f$ stores only its active backup assignments as compact 8-byte cache-aligned records `BackupAssignment` (`uint32_t req_id, uint16_t path_id, uint8_t wavelength, 1B padding`) ($\sim 15$ disrupted requests/scenario $\times 8\text{ B} \times 30,756 \approx \mathbf{3.6\text{ MiB}}$).
    - Across **all 8 parallel P-core workers combined**, total memory footprint stays under **$250\text{ MiB}$**, eliminating DRAM bandwidth bottlenecks.
 
 ### 2.2 Unordered Degraded-Topology Deduplication & Shared Path Memoization

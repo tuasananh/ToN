@@ -246,4 +246,17 @@ class PathPool {
       degraded_table_;
 };
 
+// Returns true if path a and path b traverse the exact same sequence of
+// physical arcs.
+[[nodiscard]] inline bool same_physical_path(const PathPool& pool, PathId a,
+                                             PathId b) noexcept {
+  if (a == b) {
+    return true;
+  }
+  const auto arcs_a = pool.path_arcs(a);
+  const auto arcs_b = pool.path_arcs(b);
+  return arcs_a.size() == arcs_b.size() &&
+         std::equal(arcs_a.begin(), arcs_a.end(), arcs_b.begin());
+}
+
 }  // namespace ton
