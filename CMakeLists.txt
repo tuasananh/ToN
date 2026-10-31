@@ -53,6 +53,7 @@ add_library(
     STATIC
         src/core/graph.cpp
         src/core/scenarios.cpp
+        src/core/path_pool.cpp
 )
 target_include_directories(ton_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(ton_core PUBLIC ton_compile_options)
