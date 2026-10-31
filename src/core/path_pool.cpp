@@ -12,25 +12,18 @@ namespace ton {
 namespace {
 
 constexpr double kStretchEps = 1e-9;
-constexpr double kCostKeyScale =
-    1e9;  // 1 micrometer resolution in km; exact integer for hops.
 constexpr size_t kMaxStaticNodes = 128;
-
-[[nodiscard]] int64_t quantize_cost_key(double cost) noexcept {
-  return static_cast<int64_t>(std::llround(cost * kCostKeyScale));
-}
 
 struct CandidateRoute {
   std::vector<NodeId> nodes;
   std::vector<ArcId> arcs;
   double cost = 0.0;
-  int64_t cost_key = 0;
 };
 
 [[nodiscard]] bool candidate_less(const CandidateRoute& a,
                                   const CandidateRoute& b) noexcept {
-  if (a.cost_key != b.cost_key) {
-    return a.cost_key < b.cost_key;
+  if (a.cost != b.cost) {
+    return a.cost < b.cost;
   }
   return std::lexicographical_compare(a.nodes.begin(), a.nodes.end(),
                                       b.nodes.begin(), b.nodes.end());
@@ -93,29 +86,26 @@ bool lexicographic_spur_dijkstra(const Graph& graph, NodeId spur, NodeId dst,
   };
 
   if (n <= kMaxStaticNodes) {
-    constexpr int64_t kInfKey = std::numeric_limits<int64_t>::max();
-    std::array<double, kMaxStaticNodes> dist_raw;
-    std::array<int64_t, kMaxStaticNodes> dist_key;
+    constexpr double kInf = std::numeric_limits<double>::infinity();
+    std::array<double, kMaxStaticNodes> dist;
     std::array<uint8_t, kMaxStaticNodes> settled;
     std::array<StaticNodeSeq, kMaxStaticNodes> best_seq;
 
-    std::fill_n(dist_raw.begin(), n, std::numeric_limits<double>::infinity());
-    std::fill_n(dist_key.begin(), n, kInfKey);
+    std::fill_n(dist.begin(), n, kInf);
     std::fill_n(settled.begin(), n, uint8_t{0});
 
-    dist_raw[spur] = 0.0;
-    dist_key[spur] = 0;
+    dist[spur] = 0.0;
     best_seq[spur].data[0] = spur;
     best_seq[spur].len = 1;
 
     for (size_t iter = 0; iter < n; ++iter) {
       NodeId u = INVALID_NODE;
       for (NodeId cand = 0; cand < n; ++cand) {
-        if (settled[cand] != 0 || dist_key[cand] == kInfKey) {
+        if (settled[cand] != 0 || !std::isfinite(dist[cand])) {
           continue;
         }
-        if (u == INVALID_NODE || dist_key[cand] < dist_key[u] ||
-            (dist_key[cand] == dist_key[u] &&
+        if (u == INVALID_NODE || dist[cand] < dist[u] ||
+            (dist[cand] == dist[u] &&
              lex_less_seq(best_seq[cand], best_seq[u]))) {
           u = cand;
         }
@@ -144,13 +134,10 @@ bool lexicographic_spur_dijkstra(const Graph& graph, NodeId spur, NodeId dst,
         if (settled[v] != 0 || forbidden_nodes[v] != 0) {
           continue;
         }
-        const double nd_raw = dist_raw[u] + graph.arc_cost(a, metric);
-        const int64_t nd_key = quantize_cost_key(nd_raw);
-        if (nd_key < dist_key[v] ||
-            (nd_key == dist_key[v] &&
-             lex_less_append(best_seq[u], v, best_seq[v]))) {
-          dist_raw[v] = nd_raw;
-          dist_key[v] = nd_key;
+        const double nd = dist[u] + graph.arc_cost(a, metric);
+        if (nd < dist[v] ||
+            (nd == dist[v] && lex_less_append(best_seq[u], v, best_seq[v]))) {
+          dist[v] = nd;
           best_seq[v] = best_seq[u];
           best_seq[v].arcs[best_seq[v].len - 1] = a;
           best_seq[v].data[best_seq[v].len] = v;
@@ -162,25 +149,23 @@ bool lexicographic_spur_dijkstra(const Graph& graph, NodeId spur, NodeId dst,
   }
 
   // General fallback for graphs with N > 128.
-  constexpr int64_t kInfKey = std::numeric_limits<int64_t>::max();
-  std::vector<double> dist_raw(n, std::numeric_limits<double>::infinity());
-  std::vector<int64_t> dist_key(n, kInfKey);
+  constexpr double kInf = std::numeric_limits<double>::infinity();
+  std::vector<double> dist(n, kInf);
   std::vector<uint8_t> settled(n, 0);
   std::vector<std::vector<NodeId>> best_nodes(n);
   std::vector<std::vector<ArcId>> best_arcs(n);
 
-  dist_raw[spur] = 0.0;
-  dist_key[spur] = 0;
+  dist[spur] = 0.0;
   best_nodes[spur] = {spur};
 
   for (size_t iter = 0; iter < n; ++iter) {
     NodeId u = INVALID_NODE;
     for (NodeId cand = 0; cand < n; ++cand) {
-      if (settled[cand] != 0 || dist_key[cand] == kInfKey) {
+      if (settled[cand] != 0 || !std::isfinite(dist[cand])) {
         continue;
       }
-      if (u == INVALID_NODE || dist_key[cand] < dist_key[u] ||
-          (dist_key[cand] == dist_key[u] &&
+      if (u == INVALID_NODE || dist[cand] < dist[u] ||
+          (dist[cand] == dist[u] &&
            std::lexicographical_compare(
                best_nodes[cand].begin(), best_nodes[cand].end(),
                best_nodes[u].begin(), best_nodes[u].end()))) {
@@ -205,17 +190,14 @@ bool lexicographic_spur_dijkstra(const Graph& graph, NodeId spur, NodeId dst,
       if (settled[v] != 0 || forbidden_nodes[v] != 0) {
         continue;
       }
-      const double nd_raw = dist_raw[u] + graph.arc_cost(a, metric);
-      const int64_t nd_key = quantize_cost_key(nd_raw);
+      const double nd = dist[u] + graph.arc_cost(a, metric);
       std::vector<NodeId> cand_nodes = best_nodes[u];
       cand_nodes.push_back(v);
-      if (nd_key < dist_key[v] ||
-          (nd_key == dist_key[v] &&
-           std::lexicographical_compare(cand_nodes.begin(), cand_nodes.end(),
-                                        best_nodes[v].begin(),
-                                        best_nodes[v].end()))) {
-        dist_raw[v] = nd_raw;
-        dist_key[v] = nd_key;
+      if (nd < dist[v] ||
+          (nd == dist[v] && std::lexicographical_compare(
+                                cand_nodes.begin(), cand_nodes.end(),
+                                best_nodes[v].begin(), best_nodes[v].end()))) {
+        dist[v] = nd;
         best_nodes[v] = std::move(cand_nodes);
         best_arcs[v] = best_arcs[u];
         best_arcs[v].push_back(a);
@@ -268,7 +250,6 @@ std::vector<RawPath> enumerate_yen_paths(const Graph& graph, NodeId src,
       .nodes = std::move(first_nodes),
       .arcs = std::move(first_arcs),
       .cost = shortest_cost,
-      .cost_key = quantize_cost_key(shortest_cost),
   });
 
   std::vector<CandidateRoute> pool_b;
@@ -349,7 +330,6 @@ std::vector<RawPath> enumerate_yen_paths(const Graph& graph, NodeId src,
             .nodes = std::move(total_nodes),
             .arcs = std::move(total_arcs),
             .cost = total_cost,
-            .cost_key = quantize_cost_key(total_cost),
         });
       }
     }

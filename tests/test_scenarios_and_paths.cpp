@@ -90,10 +90,8 @@ std::vector<ton::RawPath> brute_force_simple_paths_oracle(
 
   std::sort(all_simple.begin(), all_simple.end(),
             [](const ton::RawPath& a, const ton::RawPath& b) {
-              const auto ka = static_cast<int64_t>(std::llround(a.cost * 1e9));
-              const auto kb = static_cast<int64_t>(std::llround(b.cost * 1e9));
-              if (ka != kb) {
-                return ka < kb;
+              if (a.cost != b.cost) {
+                return a.cost < b.cost;
               }
               return a.nodes < b.nodes;
             });
@@ -245,6 +243,42 @@ TEST_CASE("Yen's K-shortest paths with lexicographical tie-breaking",
     REQUIRE(hop_routes[0].nodes == std::vector<ton::NodeId>{0, 1, 5});
     REQUIRE(hop_routes[1].nodes == std::vector<ton::NodeId>{0, 2, 5});
     REQUIRE(hop_routes[2].nodes == std::vector<ton::NodeId>{0, 4, 5});
+  }
+
+  SECTION("Micro-precision raw double cost ordering probe") {
+    std::vector<ton::NodeInfo> probe_nodes = {
+        {.id = 0, .name = "N0", .lon_deg = 0.0, .lat_deg = 0.0},
+        {.id = 1, .name = "N1", .lon_deg = 0.0, .lat_deg = 0.0},
+        {.id = 2, .name = "N2", .lon_deg = 0.0, .lat_deg = 0.0},
+        {.id = 3, .name = "N3", .lon_deg = 0.0, .lat_deg = 0.0},
+    };
+    std::vector<ton::SpanInput> probe_spans = {
+        {.name = "S01", .u = 0, .v = 1, .override_length_km = 1.0000000002},
+        {.name = "S13", .u = 1, .v = 3, .override_length_km = 1.0000000002},
+        {.name = "S02", .u = 0, .v = 2, .override_length_km = 1.0},
+        {.name = "S23", .u = 2, .v = 3, .override_length_km = 1.0},
+    };
+    const ton::Graph probe("probe4", probe_nodes, probe_spans);
+
+    // K_max = 1 must strictly return the mathematically shortest path [0, 2, 3]
+    // (cost 2.0), not [0, 1, 3] (cost 2.0000000004), despite [0, 1, 3] having
+    // lexicographically smaller node IDs.
+    const auto k1_routes = ton::enumerate_yen_paths(
+        probe, 0, 3, ton::CutArcs{}, ton::DistanceMetric::GeographicKm,
+        /*kappa=*/0.50, /*k_max=*/1);
+    REQUIRE(k1_routes.size() == 1);
+    REQUIRE(k1_routes[0].nodes == std::vector<ton::NodeId>{0, 2, 3});
+    REQUIRE(k1_routes[0].cost == 2.0);
+
+    const auto k2_routes = ton::enumerate_yen_paths(
+        probe, 0, 3, ton::CutArcs{}, ton::DistanceMetric::GeographicKm,
+        /*kappa=*/0.50, /*k_max=*/2);
+    REQUIRE(k2_routes.size() == 2);
+    REQUIRE(k2_routes[0].nodes == std::vector<ton::NodeId>{0, 2, 3});
+    REQUIRE(k2_routes[0].cost == 2.0);
+    REQUIRE(k2_routes[1].nodes == std::vector<ton::NodeId>{0, 1, 3});
+    REQUIRE(k2_routes[1].cost == 2.0000000004);
+    REQUIRE(k2_routes[0].cost < k2_routes[1].cost);
   }
 
   SECTION("Brute-force oracle verification on Nobel-EU") {
