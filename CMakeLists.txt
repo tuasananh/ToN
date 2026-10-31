@@ -48,9 +48,13 @@ if(ENABLE_SANITIZERS)
     )
 endif()
 
-add_library(ton_core INTERFACE)
-target_include_directories(ton_core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(ton_core INTERFACE ton_compile_options)
+add_library(
+    ton_core
+    STATIC
+        src/core/graph.cpp
+)
+target_include_directories(ton_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(ton_core PUBLIC ton_compile_options)
 
 add_executable(ton_engine src/main.cpp)
 target_link_libraries(ton_engine PRIVATE ton_core)
