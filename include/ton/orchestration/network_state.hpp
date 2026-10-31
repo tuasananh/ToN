@@ -13,6 +13,10 @@
 
 namespace ton {
 
+namespace test {
+class InvariantFuzzInjector;
+}
+
 // Cache-resident network state tracking immutable primary allocations,
 // L3-resident per-scenario backup bitmasks, compact per-state backup
 // assignments, and L1-resident backup_slot_refcount[M][W].
@@ -296,6 +300,8 @@ class NetworkState {
   StateBackupTable s2_table_;
 
   std::vector<uint64_t> dirty_arc_words_;
+
+  friend class test::InvariantFuzzInjector;
 };
 
 }  // namespace ton
