@@ -91,6 +91,7 @@ add_executable(
         tests/test_phase3_gate.cpp
         tests/test_invariant_auditor.cpp
         tests/test_fuzz_invariants.cpp
+        tests/test_phase4_gate.cpp
 )
 target_include_directories(ton_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 target_link_libraries(ton_tests PRIVATE ton_core catch2_amalgamated)
