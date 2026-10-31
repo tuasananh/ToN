@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <numbers>
@@ -19,6 +20,7 @@
 #include "ton/core/scenarios.hpp"
 #include "ton/core/types.hpp"
 #include "ton/orchestration/network_state.hpp"
+#include "ton/orchestration/sim_orchestrator.hpp"
 #include "ton/orchestration/staging_arena.hpp"
 #include "ton/orchestration/telemetry.hpp"
 #include "ton/solvers/dsatur_solver.hpp"
@@ -1348,6 +1350,223 @@ void test_inner_solvers_and_dsatur_theorems() {
   TON_CHECK(n_scratch.theorem1_fc_checked_steps > 0);
 }
 
+std::vector<ton::Request> load_request_stream_csv(
+    const std::filesystem::path& csv_path, size_t max_count = 1000) {
+  std::ifstream ifs(csv_path);
+  TON_CHECK_MSG(ifs.is_open(), "Failed to open stream CSV");
+  std::string line;
+  TON_CHECK(static_cast<bool>(std::getline(ifs, line)));  // skip header
+
+  std::vector<ton::Request> stream;
+  stream.reserve(max_count);
+  while (stream.size() < max_count && std::getline(ifs, line)) {
+    if (line.empty()) {
+      continue;
+    }
+    const size_t c1 = line.find(',');
+    const size_t c2 = line.find(',', c1 + 1);
+    const size_t c3 = line.find(',', c2 + 1);
+    TON_CHECK(c1 != std::string::npos && c2 != std::string::npos);
+    const auto t = static_cast<ton::RequestId>(std::stoul(line.substr(0, c1)));
+    const auto src = static_cast<ton::NodeId>(
+        std::stoul(line.substr(c1 + 1, c2 - (c1 + 1))));
+    const auto dst = static_cast<ton::NodeId>(std::stoul(
+        c3 == std::string::npos ? line.substr(c2 + 1)
+                                : line.substr(c2 + 1, c3 - (c2 + 1))));
+    stream.push_back(ton::Request{.id = t, .src = src, .dst = dst});
+  }
+  return stream;
+}
+
+void audit_simultaneous_state_invariants(const ton::NetworkState& state,
+                                         const ton::PathPool& pool) {
+  TON_CHECK(state.regime() == ton::FailureRegime::Simultaneous);
+  const auto& g = state.graph();
+  const auto& sc_set = state.scenarios();
+  const ton::ArcId m = g.num_arcs();
+
+  // INV-1 & INV-4 (Primary clash conservation & route admissibility).
+  std::vector<ton::WavelengthMask> prim_occ(m, ton::EMPTY_MASK);
+  for (const ton::RequestId r : state.admitted_ids()) {
+    TON_CHECK(state.is_admitted(r));
+    const ton::Request& req = state.request(r);
+    const ton::Lightpath lp = state.primary_lightpath(r);
+    TON_CHECK(lp.valid());
+
+    const ton::PathSlice cand = pool.find_healthy(req.src, req.dst);
+    bool in_pool = false;
+    for (const ton::PathId pid : cand) {
+      if (pid == lp.path_id) {
+        in_pool = true;
+        break;
+      }
+    }
+    TON_CHECK(in_pool);
+
+    const ton::WavelengthMask bit = ton::wavelength_bit(lp.wavelength);
+    for (const ton::ArcId a : pool.path_arcs(lp.path_id)) {
+      TON_CHECK((prim_occ[a] & bit) == 0u);
+      TON_CHECK(state.primary_owner(a, lp.wavelength) == r);
+      prim_occ[a] |= bit;
+    }
+  }
+  for (ton::ArcId a = 0; a < m; ++a) {
+    TON_CHECK(prim_occ[a] == state.primary_mask(a));
+  }
+
+  // INV-2, INV-3, INV-4, INV-5 across all Simultaneous scenarios F in F_sim.
+  std::vector<ton::WavelengthMask> scen_occ(m, ton::EMPTY_MASK);
+  std::vector<ton::WavelengthMask> back_only(m, ton::EMPTY_MASK);
+  for (const auto& sc : sc_set.sim_scenarios()) {
+    std::fill(scen_occ.begin(), scen_occ.end(), ton::EMPTY_MASK);
+    std::fill(back_only.begin(), back_only.end(), ton::EMPTY_MASK);
+
+    uint32_t expected_disrupted = 0;
+    for (const ton::RequestId r : state.admitted_ids()) {
+      const ton::Lightpath prim = state.primary_lightpath(r);
+      const bool severed = pool.path_intersects(prim.path_id, sc.cut_arcs);
+      if (!severed) {
+        // Surviving primary slots are strictly protected (INV-5).
+        TON_CHECK(!state.find_sim_backup(sc.id, r).valid());
+        const ton::WavelengthMask bit = ton::wavelength_bit(prim.wavelength);
+        for (const ton::ArcId a : pool.path_arcs(prim.path_id)) {
+          scen_occ[a] |= bit;
+        }
+      } else {
+        ++expected_disrupted;
+      }
+    }
+
+    const auto backups = state.sim_backups(sc.id);
+    TON_CHECK(backups.size() == expected_disrupted);
+
+    for (const auto& ba : backups) {
+      TON_CHECK(ba.valid() && state.is_admitted(ba.req_id));
+      const ton::Request& req = state.request(ba.req_id);
+      const ton::Lightpath prim = state.primary_lightpath(ba.req_id);
+      TON_CHECK(pool.path_intersects(prim.path_id, sc.cut_arcs));  // INV-3
+      TON_CHECK(!pool.path_intersects(ba.path_id, sc.cut_arcs));   // INV-4
+
+      const ton::PathSlice cand = pool.find(sc.cut_arcs, req.src, req.dst);
+      bool in_pool = false;
+      for (const ton::PathId pid : cand) {
+        if (pid == ba.path_id) {
+          in_pool = true;
+          break;
+        }
+      }
+      TON_CHECK(in_pool);
+
+      const ton::WavelengthMask bit = ton::wavelength_bit(ba.wavelength);
+      for (const ton::ArcId a : pool.path_arcs(ba.path_id)) {
+        TON_CHECK((scen_occ[a] & bit) ==
+                  0u);  // Zero clash in operational state!
+        scen_occ[a] |= bit;
+        back_only[a] |= bit;
+      }
+    }
+
+    for (ton::ArcId a = 0; a < m; ++a) {
+      TON_CHECK(back_only[a] == state.sim_backup_mask(sc.id, a));
+    }
+  }
+
+  TON_CHECK(ton::SpectralTelemetry::verify_refcounts_exact(state));
+  TON_CHECK(ton::SpectralTelemetry::evaluate(state) ==
+            ton::SpectralTelemetry::evaluate_full_scan(state));
+}
+
+void test_sim_orchestrator_on_nobel_eu() {
+  const auto nobel = ton::Graph::from_sndlib_xml(repo_root() / "data" /
+                                                 "topologies" / "nobel-eu.xml");
+  const auto nobel_span =
+      ton::ScenarioSet::enumerate(nobel, ton::CutModel::Span);
+  const auto stream = load_request_stream_csv(
+      repo_root() / "data" / "streams" / "nobel_eu_realistic_seed_01.csv", 300);
+  TON_CHECK(stream.size() == 300);
+
+  ton::PathPool pool(nobel, ton::DistanceMetric::GeographicKm, 0.10, 10);
+  pool.prewarm_for_stream(stream, nobel_span);
+
+  // 1. Proposed SimRDF (DsaturSolver)
+  ton::NetworkState sim_rdf_state(nobel, nobel_span,
+                                  ton::FailureRegime::Simultaneous, 300);
+  ton::SimOrchestrator<ton::DsaturSolver> sim_rdf(nobel, nobel_span, pool, 300);
+  uint32_t sim_rdf_denied = 0;
+  for (const auto& req : stream) {
+    const auto prev_metrics = ton::SpectralTelemetry::evaluate(sim_rdf_state);
+    const uint16_t prev_adm = sim_rdf_state.num_admitted();
+    const auto res = sim_rdf.admit_request(req, sim_rdf_state);
+    if (!res.admitted) {
+      ++sim_rdf_denied;
+      TON_CHECK(sim_rdf_state.num_admitted() == prev_adm);
+      TON_CHECK(ton::SpectralTelemetry::evaluate(sim_rdf_state) ==
+                prev_metrics);
+    }
+  }
+  TON_CHECK(sim_rdf_state.num_admitted() > 50 && sim_rdf_denied > 0);
+  audit_simultaneous_state_invariants(sim_rdf_state, pool);
+
+  // Verify deterministic repeatability after reset().
+  const uint16_t first_run_adm = sim_rdf_state.num_admitted();
+  const auto first_run_metrics =
+      ton::SpectralTelemetry::evaluate(sim_rdf_state);
+  sim_rdf_state.reset();
+  sim_rdf.reset();
+  for (const auto& req : stream) {
+    (void)sim_rdf.admit_request(req, sim_rdf_state);
+  }
+  TON_CHECK(sim_rdf_state.num_admitted() == first_run_adm);
+  TON_CHECK(ton::SpectralTelemetry::evaluate(sim_rdf_state) ==
+            first_run_metrics);
+
+  // 2. GreedySimRDF (GreedySolver)
+  ton::NetworkState greedy_sim_state(nobel, nobel_span,
+                                     ton::FailureRegime::Simultaneous, 300);
+  ton::SimOrchestrator<ton::GreedySolver> greedy_sim(nobel, nobel_span, pool,
+                                                     300);
+  for (const auto& req : stream) {
+    (void)greedy_sim.admit_request(req, greedy_sim_state);
+  }
+  TON_CHECK(greedy_sim_state.num_admitted() > 50);
+  audit_simultaneous_state_invariants(greedy_sim_state, pool);
+
+  // 3. NoRerouteSimRDF (NoRerouteSolver) + strict immutability verification!
+  ton::NetworkState nr_sim_state(nobel, nobel_span,
+                                 ton::FailureRegime::Simultaneous, 300);
+  ton::SimOrchestrator<ton::NoRerouteSolver> nr_sim(nobel, nobel_span, pool,
+                                                    300);
+
+  struct FrozenBackupRecord {
+    ton::ScenarioId f;
+    ton::RequestId r;
+    ton::Lightpath lp;
+  };
+  std::vector<FrozenBackupRecord> frozen_records;
+
+  for (const auto& req : stream) {
+    const auto res = nr_sim.admit_request(req, nr_sim_state);
+    if (res.admitted) {
+      for (const auto& sc : nobel_span.sim_scenarios()) {
+        if (pool.path_intersects(res.primary.path_id, sc.cut_arcs)) {
+          const ton::Lightpath lp = nr_sim_state.find_sim_backup(sc.id, req.id);
+          TON_CHECK(lp.valid());
+          frozen_records.push_back(
+              FrozenBackupRecord{.f = sc.id, .r = req.id, .lp = lp});
+        }
+      }
+    }
+  }
+  TON_CHECK(nr_sim_state.num_admitted() > 40);
+  // Every dynamic-reconfiguration algorithm should match or outperform
+  // immutable No-Reroute on hub-skewed realistic Nobel-EU traffic.
+  TON_CHECK(sim_rdf_state.num_admitted() >= nr_sim_state.num_admitted());
+  for (const auto& rec : frozen_records) {
+    TON_CHECK(nr_sim_state.find_sim_backup(rec.f, rec.r) == rec.lp);
+  }
+  audit_simultaneous_state_invariants(nr_sim_state, pool);
+}
+
 }  // namespace
 
 int main() {
@@ -1357,6 +1576,7 @@ int main() {
   test_yen_path_pool_and_lexicographic_ties();
   test_network_state_staging_and_telemetry();
   test_inner_solvers_and_dsatur_theorems();
+  test_sim_orchestrator_on_nobel_eu();
   std::cout << "[PASS] All ToN C++23 unit tests passed.\n";
   return EXIT_SUCCESS;
 }
