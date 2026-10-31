@@ -1,0 +1,714 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{tgtermes}
+% --- A
+\usepackage{algorithmic}
+\usepackage[linesnumbered,ruled,noline]{algorithm2e}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+
+\usepackage{color}
+\usepackage{comment}
+\usepackage{graphicx}
+\usepackage{latexsym}
+\usepackage{multirow}
+\usepackage{xspace}
+\usepackage{float}
+\usepackage{subfigure}
+\usepackage{pdflscape}
+\usepackage{algorithmic}
+\usepackage{orcidlink}
+\usepackage{booktabs}
+\usepackage{tabularx}
+
+
+% --- A
+
+% --- B
+\def \bw {b}
+\def \b  {\textsc{b}}
+
+% --- C
+\def \ConfigIdx {\gamma}
+\def \ConfigSet {\Gamma}
+\def \ComputeRestoration {\textsc{ComputeRestoration}}
+\def \ComputeRestorationSeq {\textsc{ComputeRestorationSeq}}
+
+
+% --- D
+\def \DST       {\textsc{dst}}
+
+% --- F
+\def \FailureSet      {\mathcal{F}}
+\def \FailureIdx      {F}
+\def \FailureIdxSmall {\textsc{f}}
+\def \false           {.\textsc{false}.}
+\def \FDPAlgOne       {\textsc{fdp}\_alg1}
+
+% --- G
+\def \Gbps {\text{Gbps}}
+
+% --- I
+\def \init {\textsc{init}}
+\def \intersect {\textsc{inter}}
+
+% --- K
+\def \knew {k^{\textnormal{new}}}
+
+% --- l
+\def \lightPathIdx           {\pi}
+\def \lightPathIdxWk         {\pi^{\textsc{w}}_k}
+\def \lightPathIdxBkF        {\pi^{\textsc{b}, \textsc{f}}_{k}}
+\def \lowerFre               {\underline{f}}
+\def \LinkSet                   {L}
+\def \LinkIdx                   {\ell}
+\def \linkPP                    {\tilde \ell}
+\def \LP                        {\textsc{lp}}
+\def \LightPathIdxPrimary       {\pi^{\w}}
+\def \LightPathSetProtection    {\Pi^{\b}}
+\def \LightPathSet              {\Pi}
+
+% --- M
+\def \ModeIdx {m}
+\def \ModeSet {M}
+\def \Mark {\textsc{mark}}
+
+% --- N
+\def \NodeSet {V}
+\def \NodeIdx {v}
+
+% --- O
+
+% --- P
+\def \p                {\textsc{p}}
+\def \PathSet          {\textsc{P}}
+\def \pathset          {\textsc{P}}
+\def \PathIdx          {p}
+\def \pib              {\pi^{\b}}
+\def \piw              {\pi^{\w}}
+
+% --- U
+\def \upperFre {\overline{f}}
+
+% --- R
+\def \r                {\textsc{r}}
+\def \RateSet          {R}
+\def \RateIdx          {r}
+\def \RequestSet       {K}
+\def \RequestIdx       {k}
+\def \rest             {\textsc{rest}}   % restoration
+\def \restPathSet      {P^{\rest}}
+\def \restlightPathSet {\Pi^{\rest}}
+\def \restorationlightPathSet {\Pi^{B}}
+\def \restorationlightPath {\pi^{B}}
+
+% --- S
+\def \SlotSet   {S}
+\def \SlotIdx   {s}
+\def \SRC       {\textsc{src}}
+\def \success   {\textsc{success}}
+\def \successC  {\textsc{success}\_\textnormal{C}}
+\def \successF  {\textsc{success}\_\textnormal{F}}
+\def \successlP {\textsc{success}\_\textnormal{lP}}
+\def \successl  {\textsc{success}\_{\ell}}
+\def \soluset {\textsc{solution\_set}}
+\def \solu {\textsc{solution}}
+
+% --- T
+\def \Tbps      {\text{Tbps}}
+\def \true      {.\textsc{true}.}
+\def \TryAllocPrimary {\textsc{TryAlloc}}
+\def \DSATUR    {\textsc{Dsatur}}
+\def \ColorResult {\mathcal{C}}
+\def \affected  {\textsc{aff}}
+\def \AffectedReqs {\mathcal{R}_{\affected}}
+
+% --- W
+\def \w             {\textsc{w}}
+\def \WavelengthIdx {\lambda}
+\def \WavelengthSet {\Lambda}    
+
+\newcommand{\BJ}[1]{\noindent{\color{red}[\textsc{BJ:} #1]}\xspace}
+\newcommand{\Yefei}[1]{\noindent{\color{cyan}[\textsc{Yefei:} #1]}\xspace}
+\newcommand{\Huy}[1]{\noindent{\color{blue}[\textsc{Huy:} #1]}\xspace}
+\newcommand{\Anh}[1]{\noindent{\color{orange}[\textsc{Anh:} #1]}\xspace}
+
+
+\begin{document}
+
+\title{Simultaneous vs. Sequential Dual Link Failure \\ in Restoration}
+
+\author{\IEEEauthorblockN{Brigitte Jaumard, Yefei Zhang}
+\IEEEauthorblockA{Gina Cody School of Engineering and Computer Science \\
+Department of Computer Science and Software Engineering \\
+Concordia University, Montreal (QC) Canada\\
+Email: brigitte.jaumard@concordia.ca
+}
+\and
+\IEEEauthorblockN{Quang Huy Duong\orcidlink{0000-0002-3096-7314}, Tuan Anh Tran, Cong Vinh Nguyen}
+\IEEEauthorblockA{School of Information and Communications Technology\\
+Hanoi University of Science and Technology \\
+Hanoi, Vietnam\\
+Email:huy.duongquang@hust.edu.vn}
+}
+
+\maketitle
+
+\begin{abstract}
+
+Explosive traffic growth, high data rates, and low-latency requirements are among the key challenges of fifth-generation (5G) networks. Meeting these requirements relies on a sufficiently rich and well-interconnected optical backbone network. However, as the network becomes denser, the risk of multiple link failures also increases, in particular dual-link failures that may occur either simultaneously or sequentially.
+% In this paper, we investigate proactive restoration under simultaneous and sequential dual-link failures, with the objective of guaranteeing recoverability for every request under all dual-link failure scenarios. We propose two efficient heuristic algorithms based on graph-coloring framework, which enables a consistent comparison of the two failure modes while capturing their distinct restoration dynamics. We evaluate both schemes under uniform and gravity-based incremental traffic distributions. The main observation is that, even for the same dual-link failure pairs, the sequential scenario reaches the first denied request earlier and requires higher processing effort than the simultaneous scenario. This result underscores the higher algorithmic and resource-management complexity associated with sequential restoration.
+This paper studies proactive restoration in WDM optical networks under simultaneous and sequential dual-link failures. Two online graph-coloring-based heuristics are proposed: SimRDF for the simultaneous failure case and SeqRDF for the sequential failure case. Both heuristics guarantee recoverability for every admitted request under all considered dual-failure scenarios. SimRDF restores all requests affected by a failure pair under a single post-failure state, whereas SeqRDF performs a two-stage restoration in which first-stage recovery decisions constrain the resources available after the second failure. Using a common framework for path selection, wavelength assignment, and backup multiplexing, the two schemes are compared on Nobel-EU and Germany50 networks under uniform and real traffic, as well as physical and directional failure cuts. Numerical results show that sequential restoration requires up to 3.4 times more processing time, generally denies requests earlier, consumes backup capacity faster, and incurs higher protection overhead than simultaneous restoration.These results confirm that sequential dual-link failures impose a higher computational burden and reduce network provisioning capacity compared with simultaneous dual-link failures.
+
+% ----------------
+% ----------------
+% ----------------
+
+\end{abstract}
+
+\IEEEpeerreviewmaketitle
+
+% ----------------
+% ----------------
+% ----------------
+
+\section{Introduction}
+\label{sec: intro}
+
+The rapid growth of data traffic and the demand for high capacity, low latency, and ultra-high reliability have made optical backbone networks indispensable \cite{gomes2018boosting,moubayed2023otn,tezergil2022wireless}. A fiber-link failure can simultaneously interrupt many lightpaths sharing that link, making survivability mechanisms essential. These mechanisms fall into two broad categories: \emph{protection}, which reserves backup resources in advance, and \emph{restoration}, which reroutes traffic upon failure using spare or shared capacity \cite{miladic2021review}.
+
+As backbone networks become denser to support 5G and beyond, the risk of dual-link failures grows accordingly \cite{gangopadhyay20195g, frederick2004evaluating,Basak2022protection}. Dual-link failures introduce an additional layer of complexity absent in single-failure settings: they can unfold in two qualitatively different ways. In the \emph{simultaneous} case, both links fail before any recovery action can be taken, so a single joint restoration plan is sufficient. In the \emph{sequential} case, the second link fails only after the requests disrupted by the first failure have already been restored. The first-stage recovery decisions alter the residual capacity available when the second failure strikes; a restoration path established after the first failure may occupy wavelengths needed later, or may itself be cut by the second failed link, forcing a second-stage reassignment. Sequential failure is therefore not a simple repetition of single-failure restoration, and the order of the two failed links can change the feasible solution set.
+
+Despite a growing body of work on dual-failure survivability, the two failure modes are seldom compared on equal footing. Most existing schemes are tailored to one setting or the other, and adapting a simultaneous-failure algorithm to the sequential case generally requires relaxing the commitments made after the first failure, which increases reconfiguration complexity and recovery time. This paper addresses that gap. Building on a graph-coloring framework for backup-lightpath assignment \cite{Jaumard2026AGraphColoring}, we design two proactive restoration heuristics, SimRDF for the simultaneous case and SeqRDF for the sequential case, within a common algorithmic structure. This unified design isolates the effect of failure chronology while keeping the underlying path selection, wavelength assignment, and backup-multiplexing mechanisms consistent.
+
+This paper substantially extends our preliminary conference version \cite{Jaumard2026AGraphColoring}, which introduced SeqRDF for sequential failures only under uniform traffic and a single failure model. The present work makes four concrete additions. First, we develop SimRDF, a new restoration heuristic for the simultaneous dual-link failure case, and integrate both schemes into a single unified algorithmic framework that allows direct, controlled comparison. Second, we extend the failure model to cover both physical fiber cuts (where both directions of a fiber are severed) and directional link cuts (unidirectional impairments), whereas the conference version considered physical cuts only. Third, we augment the traffic evaluation with real-world demand distributions derived from SNDlib in addition to uniform traffic, making the comparison more representative of operational networks. Fourth, we add protection overhead and backup capacity consumption as new performance metrics, complementing the first-denial and processing-time indicators of the conference paper.
+
+The main contributions of this paper are threefold:
+\begin{itemize}
+    \item We formalize proactive restoration for both simultaneous and sequential dual-link failures in a unified online provisioning framework, ensuring recoverability for every admitted request under all considered failure scenarios.
+    \item We propose two DSATUR-based graph-coloring heuristics, SimRDF and SeqRDF, that share the same core data structure while capturing the distinct resource-coupling constraints of each failure mode.
+    \item We provide a systematic comparative evaluation of the two schemes on Nobel-EU and Germany50 topologies under uniform and real traffic, reporting processing time, first-denial behavior, backup capacity usage, and protection overhead.
+\end{itemize}
+
+The numerical results reveal a clear and consistent pattern: sequential dual-link failures impose a substantially higher computational and resource burden than simultaneous ones. Across all tested topologies and traffic distributions, SeqRDF requires up to 3.4 times more processing time per request, reaches the first denied request earlier, consumes backup capacity faster, and incurs higher protection overhead than SimRDF. These penalties are not artifacts of a particular traffic pattern; they arise from the tighter resource coupling inherent in the two-stage sequential restoration process, where first-stage decisions reduce the degrees of freedom available when the second failure strikes. This result has a practical implication: network operators that treat sequential and simultaneous dual-link failures as equivalent are likely to underestimate both the computational load and the provisioning capacity loss introduced by sequential failures.
+
+The remainder of the paper is organized as follows. Section~\ref{sec:literature} reviews related work on dual-failure restoration in optical networks. Section~\ref{sec:restor_sim_seq} defines the problem and describes the simultaneous and sequential failure scenarios. Section~\ref{sec:heuristic} presents the proposed algorithms and the underlying data structure. Section~\ref{sec:results} reports and compares the performance of the two schemes. Finally, Section~\ref{sec: conclu} concludes the paper.
+
+% ---------------
+% ---------------
+% ---------------
+
+\section{Literature Review}
+\label{sec:literature}
+
+To cite: \cite{Zhao_2026, Sarma2025Survivable, Assis2023Protection, Arpanaei_2022, Choi_2002, Junior_2025, Khlifi_2025, Yuksel_2010}.
+
+\begin{table*}[ht]
+\centering
+\caption{Summary of surveyed papers and their graph models for failure analysis.}
+\label{tab:failure_survey}
+\begin{tabular}{c p{7cm} c c c}
+\toprule
+\textbf{Year} & \textbf{Title} & \textbf{Downloaded} & \textbf{Graph} & \textbf{Failure Model} \\
+\midrule
+2023 &
+Protection by Diversity in Elastic Optical Networks Subject to Single Link Failure &
+Yes &
+Directed &
+Directed \\
+2025 &
+Survivable Elastic Optical Network: A Survey of Failure Scenarios and Solutions &
+Yes &
+Not mentioned &
+Not clear \\
+
+2025 &
+A Survey on Reliability Evaluation of Optical Networks &
+Yes &
+Directed &
+Directed \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The reliability of modern optical networks is a multi-dimensional challenge that distinguishes between reliability (failure-free operation over time), availability (instantaneous probability of operation), and survivability (the ability to maintain service after a failure). Recent surveys establish that as networks evolve toward 6G and beyond, reliability evaluation must account for increasingly complex factors, including component aging, environmental disasters, and the intricate interdependencies between optical and power-grid infrastructures. Tezergil and Onur \cite{tezergil2022wireless} further emphasize that in the context of 5G wireless backhaul, resource allocation and scheduling are critical enablers for maintaining connectivity, where hybrid systems combining Free Space Optics (FSO) and Radio Frequency (RF) can offer robustness against weather-induced disruptions.
+
+Restoration and protection mechanisms are typically classified as path-based, link-based, proactive, or reactive. Awoyemi \textit{et al.} \cite{awo18} provide a foundational taxonomy of these mechanisms for next-generation (xG) networks, noting that while link failures are well-studied, node failure restoration remains a critical research gap. Rak \textit{et al.} \cite{rak2021disaster} extend this discussion to disaster resilience, specifically addressing large-scale events like earthquakes. They advocate for disaster-aware provisioning and manycasting, which route traffic through regions with lower disruption risks or utilize multiple backup datacenters to ensure service continuity even when parts of the network are partitioned.
+
+A significant portion of recent research focuses on surviving double-link failures, which are increasingly common as networks expand. He and Somani \cite{he03} were among the first to present path-based recovery models for surviving two-link failures using backup multiplexing to optimize total capacity utilization. Sasithong \textit{et al.} \cite{sasithong2020maximizing} expand on this by evaluating five sequential recovery methods that range from re-optimizing the second failure only to joint optimization of both failures, demonstrating that overall recoverability is maximized when backup routes are simultaneously re-assigned. For point-to-multipoint coherent systems, Kodama \textit{et al.} \cite{kodama2024double} propose link-pair shared protection, which achieves distance-independent availability by allowing reconnectability through switchable feeder fiber pairs.
+
+The trade-offs between different protection and restoration paradigms continue to be a central theme. Jaumard and Zhang \cite{Jaumard2022revisiting} compare Fault Dependent Protection (FDP) and restoration, noting that while FDP offers better bandwidth efficiency, it suffers from longer recovery times and more complex signaling compared to restoration. To address timing constraints, Kumar \textit{et al.} \cite{Kumar2021Proactive} introduced a halfway signal exchange-shared path protection (HSE-SPP) scheme that significantly reduces recovery time and bandwidth blocking probability compared to traditional dedicated path protection.
+
+Finally, the landscape of optical survivability is being reshaped by emerging physical layer technologies and artificial intelligence. Luo \textit{et al.} \cite{luo2022survivable} investigated the survivable Routing, Spectrum, Core, and Band Assignment (RSCBA) problem in multi-band Space Division Multiplexing (SDM) networks. Their work accounts for inter-channel stimulated Raman scattering (SRS), showing that separating working resources into the C-band and protection resources into the L-band can improve the signal-to-noise ratio (SNR). Complementing these hardware advancements, Chen \textit{et al.} \cite{Chen2022automating} propose a machine learning (ML)-aided architecture to manage "soft failures," such as equipment aging or misconfiguration. By utilizing hybrid learning solutions—including Bayesian neural networks to quantify uncertainty—operators can detect and localize performance degradation before it results in a "hard failure" like a fiber cut.
+
+% To cite: \cite{Zhao2026survey,he03,Kumar2021Proactive,Jaumard2022revisiting,luo2022survivable,kodama2024double}
+
+% \section{Link Protection}
+
+% \section{Path Protection}
+
+% Rak \textit{et al.} \cite{rak2021disaster} is one recent paper that discusses the failure impacts on the 5G network and presents mechanisms to increase failure resilience. It covered wired and wireless communication infrastructures, and the methods include proactive and reactive procedures. This work mainly presents some resilience methods against earthquakes in optical wired networks. Due to the multiple links failure features in earthquakes, the objective is to recover as many connections as possible. The techniques surveyed include disaster-aware provisioning, multipath and reprovisioning. The proactive methods include disaster-aware provisioning and multipath are designed based on the feature of earthquakes. For example. instead of finding lightpaths based on the cost, the utmost requests would be routed along the regions with lower disruption risks, and partial requests would be designed to be fully restored under any failure scenario. 
+% Awoyemi \textit{et al.} \cite{awo18} provides a comprehensive survey on common failure types on next-generation (xG) networks and lists some restoration mechanisms. It summarizes these methods from four views: line restoration, path restoration, proactive and reactive. In path and proactive restoration parts, it lists some works on dual failure scenarios in the optical network. It finally lists two practical examples: link failure with proactive methods and node failure with reactive methods, and the proactive method is to preconfigure one alternative path for each failure link. 
+
+% For the study of the different failure situations in the dual failure scenarios, Frederick \textit{et al.} \cite{frederick2004evaluating} and Sasithong \textit{et al.} \cite{sasithong2020maximizing} shows some strategies in their works. Frederick \textit{et al.} \cite{frederick2004evaluating} discusses the simultaneous dual failure scenarios, but it is mainly about the sequential situation. In this work, it gives two directions to solve dual failure scenarios. One is backup multiplexing, and the other one is sub-graph routing. Both of these strategies guarantee the requests interrupted by the first failure link would be fully restored, and try to recover the requests as many as possible suffering from the second failure link. Sasithong \textit{et al.} \cite{sasithong2020maximizing} gives five strategies in sequential situation. The differences between these strategies mainly vary with the flexibility of first failure link restoration lightpaths.  
+
+To the best of our knowledge, most existing studies address only one of the two dual-link failure scenarios, namely either the simultaneous case or the sequential case. As a result, the literature still lacks a systematic comparison of these two settings under a common modeling and algorithmic framework. Although a scheme designed for simultaneous failures may be adapted to sequential failures, as suggested for example by the strategies in Sasithong \textit{et al.} \cite{sasithong2020maximizing}, such an adaptation generally requires relaxing the constraints on the requests restored after the first failure, which may in turn increase reconfiguration complexity and recovery time. In this paper, we address this gap by designing restoration algorithms for both scenarios based on the same core data structure. This unified framework allows us to compare the two cases on equal footing and to highlight their differences and correlations in terms of restoration feasibility and computational performance.
+ 
+
+
+% ---------------
+% ---------------
+% ---------------
+
+\section{Restoration under Simultaneous/Sequential Dual Failures}
+\label{sec:restor_sim_seq}
+
+In this section, we formally define the online provisioning problem considered in this paper and specify the survivability requirements imposed by dual-link failures. We first introduce the network model, request model, and backup-resource sharing assumptions. We then distinguish the simultaneous and sequential failure settings, emphasizing how the timing and ordering of the two failed links affect the set of requests that must be restored and the admissible reuse of backup lightpaths. These definitions provide the basis for the heuristic algorithms developed in Section~\ref{sec:heuristic}.
+
+
+% ------------
+% ------------
+% ------------
+
+\subsection{Problem Statement: On-Line Provisioning with Backup Lightpaths}
+\label{sec:PbStatement}
+
+Consider an optical network $G = (\NodeSet, \LinkSet)$, where $\NodeSet$ denotes the set of nodes, indexed by $\NodeIdx$, and $\LinkSet$ denotes the set of links, indexed by $\LinkIdx$. Each pair of adjacent nodes is connected by two directed links, one in each direction. Each link has a wavelenght set $\Lambda$.
+
+The objective is to provision a dynamic sequence of requests while keeping the route-computing time for one request as small as possible. 
+Each request is defined by a pair of source and destination nodes, and requiring exactly one wavelength. 
+It can be granted if there exists a wavelength assignment for it such that the wavelength continuity constraint is satisfied along the entire routing path.
+
+% ---
+The network $G$ is subject to a set of link-failure scenarios denoted by $\FailureSet$, where each scenario $\FailureIdx \in \FailureSet$ consists of one or two links. To ensure survivability, each granted request must be assigned a primary lightpath for normal operating conditions and backup lightpaths that can be used to reroute the traffic when a failure scenario occurs.
+
+Once a primary lightpath has been selected for a request, its wavelength assignment cannot be modified by new incoming requests. 
+By contrast, backup lightpaths benefit from backup multiplexing: the same spare wavelength capacity can be shared by several backup lightpaths, provided that they are not required simultaneously under a given failure scenario. 
+In other words, we need to make sure backup capacity is available for protection purposes, but it does not need to be dedicated to a single request and can be shared by independent failure scenarios.  This sharable property is one of the main reasons why restoration-based approaches can use network resources more efficiently than fully dedicated protection schemes. Consequently, the key requirement is to guarantee that sufficient backup resources remain available to restore the requests disrupted by any failure scenario.
+
+% ------------
+% ------------
+% ------------
+
+\subsection{Dual Failure Scenarios}
+\label{sec: dual_FS}
+
+In this work, we consider dual-link failure scenarios. Depending on the time interval between the two failures, a dual failure may be either simultaneous or sequential.
+
+In the simultaneous case, the two failed links become unavailable at the same time. The restoration paths associated with the two failed links must therefore be determined jointly.
+
+In the sequential case, the time interval between the two failures is long enough to restore the requests disrupted by the first failed link, but not long enough to repair that link before the second failure occurs. 
+As a consequence, when the second failure takes place, the network state has already been modified by the restoration decisions made after the first failure. The restoration process must therefore account for both the second failure and the resources already reserved by the recovery paths established after the first one.
+
+This distinction is important because the same dual-link failure scenario may lead to different restoration decisions depending on whether it is simultaneous or sequential. Consider a failure scenario $\FailureIdx = \{\LinkIdx_{1}, \LinkIdx_{2}\}$ and let $\RequestSet_{\FailureIdx}$ denote the set of requests affected by this scenario. According to the failed links traversed by their primary lightpaths, the affected requests can be partitioned into three subsets: $\RequestSet_{\FailureIdx}^{\LinkIdx_{1}}$, $\RequestSet_{\FailureIdx}^{\LinkIdx_{2}}$, and $\RequestSet_{\FailureIdx}^{\LinkIdx_{1},\LinkIdx_{2}}$, corresponding respectively to requests affected only by $\LinkIdx_{1}$, only by $\LinkIdx_{2}$, and by both failed links.
+
+Under a simultaneous dual failure, all affected requests must be restored consistently under the same post-failure network state. Under a sequential dual failure, the restoration is performed in two stages: the requests disrupted by the first failed link are first restored, and then the requests affected by the second failed link are restored while taking into account the resources already used by the first-stage recovery paths.
+
+% The effect of this difference is illustrated by the example in Figures \ref{fig:ss_original}-\ref{fig:ss_seq2}.
+% Figure \ref{fig:ss_original} is the original topology with three provisioned requests $\RequestIdx_{1}$, $\RequestIdx_{2}$ and $\RequestIdx_{3}$, all using the same wavelength or their routing do not share any link. Assuming the network capacity is one and there is only one dual failure scenario $\FailureIdx = \{ \LinkIdx_{1}, \LinkIdx_{2} \}$, the solid and dashed lines show these two requests backup lightpaths in Figure \ref{fig:ss_sim}.
+% Figures \ref{fig:ss_seq1} and Figure \ref{fig:ss_seq2} show the selection of backup lightpaths for these two requests in the case of sequential figures, so that restoration paths are selected in sequence, and therefore different in the current example. First failure is link $(v_6, v_5)$ and backup path of $k_2$ is the shortest available lightpath $k_2^{B2}$ as illustrated in Figure \ref{fig:ss_seq1} on a second wavelength to avoid the wavelength conflict on link $(v_2, v_2)$. Second failure occurs on link $(v_6, v_5)$ and backup path of $k^{B2}_3$ requires a new wavelength in order to satisfy the capacity constraints of 2 units per link.
+% We can therefore see their restoration choices are different. 
+% The main reason is in sequential case, $\RequestIdx_{1}$ would prefer backup lightpath $\RequestIdx_{1}^{B1}$ because of its fewer resource usage. When the second failure link $\LinkIdx_{2}$ occurs, due to resource conflict on link $(v_2, v_3)$, $\RequestIdx_{2}$ has to use backup lightpath $\RequestIdx_{2}^{B2}$.
+% % ---
+% \begin{figure}[t]
+%   \centering
+%   \subfigure[Normal network state]{
+%     \includegraphics[width=.46\columnwidth]{Figures/Fig1.pdf}
+%   \label{fig:ss_original}}
+%   \subfigure[Simultaneous dual FLs state]{
+%     \includegraphics[width=.46\columnwidth]{Figures/Fig2.pdf}
+%   \label{fig:ss_sim}}
+
+%   \subfigure[Sequential first FL state]{
+%     \includegraphics[width=.46\columnwidth]{Figures/Fig3.pdf}
+%   \label{fig:ss_seq1}}
+%   \subfigure[Sequential dual FLs state]{
+%     \includegraphics[width=.46\columnwidth]{Figures/Fig4.pdf}
+%   \label{fig:ss_seq2}}
+%   \caption{Backup lightpath selection: simultaneous vs. sequential}
+%   \label{fig:ss_computations}
+% \end{figure}
+
+The impact of this difference is illustrated in Figure \ref{fig:ss_comp} \BJ{I would suggest to remove the node D as otherwise one may wonder why we consider an unnecessarily long restoration path in figure b. When removing D, then the two candidate have the same lengths (number of hopts), therefore any choice is ok}. Figure \ref{fig:ss_original} shows the original network state with two provisioned requests, $\RequestIdx_{1}$ and $\RequestIdx_{2}$. We assume unit link capacity and a single dual-failure scenario $\FailureIdx = \{\LinkIdx_{1}, \LinkIdx_{2}\}$. The solid and dashed arrows indicate the primary and candidate restoration lightpaths of the two requests. Figure \ref{fig:ss_sim} shows the restoration-lightpath selection in the simultaneous case, whereas Figures \ref{fig:ss_seq1} and \ref{fig:ss_seq2} illustrate the two stages of the sequential case.
+
+The two situations lead to different restoration choices. In the sequential case, after the first failure, request $\RequestIdx_{1}$ selects backup lightpath $\RequestIdx_{1}^{B1}$ because it uses fewer resources. When the second failure occurs, this earlier decision constrains the remaining available capacity; as a result, due to the resource conflict on link FB, request $\RequestIdx_{2}$ must use restoration lightpath $\RequestIdx_{2}^{B2}$. This example highlights why simultaneous and sequential dual failures cannot, in general, be handled by the same restoration decisions.
+\begin{figure}[t]
+  \centering
+  \subfigure[Normal network state]{
+    \includegraphics[width=.46\columnwidth]{Figures/problem_explain/ssExp_original.png}
+  \label{fig:ss_original}}
+  \subfigure[Simultaneous dual-failure state]{
+    \includegraphics[width=.46\columnwidth]{Figures/problem_explain/ss_sim.png}
+  \label{fig:ss_sim}}
+
+  \subfigure[Sequential state after the first failure]{
+    \includegraphics[width=.46\columnwidth]{Figures/problem_explain/ss_seq1.png}
+  \label{fig:ss_seq1}}
+  \subfigure[Sequential state after the second failure]{
+    \includegraphics[width=.46\columnwidth]{Figures/problem_explain/ss_seq2.png}
+  \label{fig:ss_seq2}}
+  \caption{Restoration lightpath selection under simultaneous and sequential dual failures}
+  \label{fig:ss_comp}
+\end{figure}
+
+\BJ{Maybe we also need to explain how we handle the second failure, whne it occurs along the first restoration path: add an example, if possible with the same graph but with a different double failure scenario.}
+
+% ------------
+% ------------
+% ------------
+\subsection{Illustrative Example}
+\label{subsec:illustrative-example}
+\input{figure}
+
+% ------------
+% ------------
+% ------------
+
+\section{An Efficient Heuristic for Dual Failure Restoration}
+\label{sec:heuristic}
+
+The algorithms developed for the two dual-failure cases follow a proactive restoration approach. In other words, a request is granted only if the network can assign both a primary lightpath and a set of backup lightpaths that guarantee recovery under all considered failure scenarios. The general structure of the two heuristics is summarized in Algorithm \ref{alg:mainAlg} and Algorithm \ref{alg:try_allocate_primary}. Their main difference lies in the way failure scenarios in $\FailureSet_{\intersect}$ and $\FailureSet_{\rest}$ are processed; this distinction is detailed later in this section.
+
+% \Huy{$\FailureSet_{\intersect} / \FailureSet_{\rest}$ are not defined.???} \BJ{Indeed, they are defined below, at the end of the next paragraph: I will fix it later.}
+
+Two issues must be addressed when a new request is considered: the intersection issue and the restoration issue.
+ To reduce computation time, the backup lightpaths of already provisioned requests are memorized, but they are not irrevocably fixed \Huy{This sentence seems wrong. backup lightpath has nothing to do with computation time}. As a result, the primary lightpath selected for a new request may use resources that were previously available to some memorized backup lightpaths, making those backup solutions infeasible under certain failure scenarios. We refer to this situation as the \emph{intersection issue}. In addition, the new request itself must be provided with feasible backup lightpaths under every relevant failure scenario; this is the \emph{restoration issue}.
+
+Because a single failure scenario could trigger both an intersection issue (for an old request) and a restoration issue (for the new request), our algorithms merge the corresponding scenarios into a unified set $\FailureSet_{\affected} = \FailureSet_{\intersect} \cup \FailureSet_{\rest}$. This allows all conflicts under a given failure scenario to be resolved concurrently and efficiently through a single graph-coloring execution, as detailed in Algorithm \ref{alg:try_allocate_primary}.
+
+Algorithm \ref{alg:mainAlg} can therefore be summarized as follows. For an incoming request $\RequestIdx$, we first compute a set of candidate primary paths $\pathset^{\w}$ on the normal network topology, bounded by a stretch factor $\kappa$ relative to the absolute shortest path length to prevent excessive resource consumption. We then examine these paths and search for available wavelengths in ascending order. Once a candidate primary lightpath $\lightPathIdx^{\w} = (\PathIdx^{\w}, \WavelengthIdx^{\w})$ is found, we delegate the joint resolution of the intersection and restoration issues to Algorithm \ref{alg:try_allocate_primary} (\TryAllocPrimary).
+
+
+
+% One or two sentences to explain it is one + a variant of it for handling the second case.
+
+\begin{algorithm}[t]
+%\SetAlgoLined
+\algsetup{linenosize=\tiny}
+\small
+\KwIn{$G$; $\RequestIdx=(src, dst)$; $\RequestSet_{provision}$; stretch factor $\kappa$ \hfill}
+\KwOut{$\success_{\RequestIdx}$ = \true/\false, to indicate if $\RequestIdx$ is successfully granted without affecting any other granted requests recoverability}
+\BlankLine
+
+$\success_{\RequestIdx} \leftarrow \false$\;
+$\pathset^{\w} \leftarrow$ calculate K shortest primary paths for $\RequestIdx$ bounded by stretch factor $\kappa$\;
+\While{$\pathset^{\w} \neq \emptyset$ and $\success_{\RequestIdx} = \false$}{
+    select $\PathIdx^{\w} \in \pathset^{\w}$; $\pathset^{\w} \leftarrow \pathset^{\w} \setminus \PathIdx^{\w}$\;
+    $\WavelengthSet_{\PathIdx^{\w}} \leftarrow$ available wavelengths on $\PathIdx^{\w}$, ordered ascendingly\;
+    \While{$\WavelengthSet_{\PathIdx^{\w}} \neq \emptyset$ and $\success_{\RequestIdx} = \false$}{
+        select next $\WavelengthIdx^{\w} \in \WavelengthSet_{\PathIdx^{\w}}$\;
+        $\lightPathIdx^{\w} \leftarrow (\PathIdx^{\w}, \WavelengthIdx^{\w})$\;
+        \If{\TryAllocPrimary($\lightPathIdx^{\w}$) = \true}{
+            $\success_{\RequestIdx} \leftarrow \true$\;
+            $\RequestSet_{provision} \leftarrow \RequestSet_{provision} \cup \{\RequestIdx\}$\;
+        }
+    }
+}
+\KwRet $\success_{\RequestIdx}$\;
+\caption{Pro-active Restoration}
+\label{alg:mainAlg}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\algsetup{linenosize=\tiny}
+\small
+\KwIn{Candidate primary lightpath $\lightPathIdx^{\w}$; set of failure scenarios $\FailureSet$; provisioned requests $\RequestSet_{provision}$; mode $\in \{\text{SimRDF}, \text{SeqRDF}\}$}
+\KwOut{$\success_{\lightPathIdx^{\w}} = \true/\false$}
+
+$\FailureSet_{\intersect} \leftarrow$ scenarios where $\lightPathIdx^{\w}$ intersects any backups in $\RequestSet_{provision}$\;
+$\FailureSet_{\rest} \leftarrow$ scenarios whose failed links interrupt $\PathIdx^{\w}$\;
+$\FailureSet_{\affected} \leftarrow \FailureSet_{\intersect} \cup \FailureSet_{\rest}$\;
+
+\If{$\FailureSet_{\affected} = \emptyset$}{
+    \KwRet\ \true\;
+}
+
+\eIf{\text{mode} = \text{SimRDF}}{
+    \ForEach{$\FailureIdx \in \FailureSet_{\affected}$}{
+        $\AffectedReqs \leftarrow$ requests in $\RequestSet_{provision}$ affected by $\FailureIdx$\;
+        \If{$\FailureIdx \in \FailureSet_{\rest}$}{$\AffectedReqs \leftarrow \AffectedReqs \cup \{\RequestIdx\}$\;}
+        $\ColorResult \leftarrow \ComputeRestoration(\FailureIdx, \AffectedReqs)$\;
+        \If{$\ColorResult = \emptyset$}{\KwRet\ \false\;}
+    }
+}{
+    Partition $\FailureSet_{\affected}$ into groups $\mathcal{G}_{e_i}$ based on first failed link $e_i$\;
+    \ForEach{\text{group } $\mathcal{G}_{e_i}$}{
+        $\ColorResult \leftarrow \ComputeRestorationSeq(\mathcal{G}_{e_i}, \RequestSet_{provision})$\;
+        \If{$\ColorResult = \emptyset$}{\KwRet\ \false\;}
+    }
+}
+\KwRet\ \true\;
+\caption{\TryAllocPrimary($\lightPathIdx^{\w}$, mode)}
+\label{alg:try_allocate_primary}
+\end{algorithm}
+
+
+% ------------
+% ------------
+% ------------
+
+\subsection{Candidate Lightpath Check}
+\label{sec: data_struc}
+
+To compute a restoration solution for a given failure scenario $\FailureIdx$, it may be necessary to reassign restoration lightpaths for a subset of requests. In both heuristics, this task is handled through a partial graph-coloring procedure. The procedure consists of two steps: path ordering and wavelength assignment. The path-ordering rule is inspired by the \textsc{Dsatur} coloring algorithm of Br\'elaz \cite{brelaz1979new}, and uses the saturation degree together with the number of uncolored neighboring nodes to prioritize the paths to be processed.
+
+Figure \ref{fig:grap_color_eg} illustrates the assignment process. Each node in the graph represents a primary/backup lightpath, while each color represents a wavelength. Nodes labeled with an integer correspond to the primary paths currently used by the requests with the same index. Each rectangle, labeled with an integer request index, denotes the request affected by $\FailureIdx$ that is has index is the integer number, and the nodes inside that rectangle represent the current backup lightpaths assigned for that request under the considered failure scenario.
+
+In the example, requests $k_1$, $k_2$, and $k_3$ are not interrupted, whereas requests $k_4$ and $k_5$ must be rerouted in order to continue transmission. Before the arrival of a new request $k$, requests $k_4$ and $k_5$ use backup paths $p_{4.1}$ and $p_{5.1}$, respectively. We assume that the link capacity is 3 and that the wavelength order is red, orange, and green. Primary and backup lightpaths are assigned wavelengths in opposite order.
+
+Now consider a candidate lightpath for the new request $k$ (it could be candidate for primary or backup) and suppose that this candidate shares some links with $p_{4.1}$ and $p_{5.1}$; plus it share the same color with lightpath $p_{4.1}$. In order to accept this candidate lightpath for the new request $k$, the network may need to reassign the wavelength of path $p_{4.1}$ and select an alternative backup path for $k_5$, according to the graph-coloring rules described above.
+
+An important implementation detail in our framework is the directional isolation of wavelength assignments. Specifically, when searching for an available wavelength for a primary lightpath, the wavelengths are examined in ascending order (from $\lambda_0$ up to $\lambda_{|\Lambda|-1}$). Conversely, when the DSATUR algorithm assigns wavelengths to backup lightpaths, it explores the wavelength set in descending order (from $\lambda_{|\Lambda|-1}$ down to $\lambda_0$). This bidirectional search strategy inherently minimizes the probability of collisions between primary and backup paths, substantially delaying the onset of capacity exhaustion and improving overall network utilization.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.32\textwidth]{Figures/graph_color_example.png}
+\caption{Graph coloring example}
+\label{fig:grap_color_eg}
+\end{figure}
+
+% ------------
+% ------------
+% ------------
+
+\subsection{Simultaneous Scenario - SimRDF Heuristic}
+\label{sec: SimRDF}
+
+Consider a new request $k$ and a candidate primary lightpath $\pi = (p, \lambda)$. Let $K_{\intersect}^{\pi}$ denote the set of already provisioned requests whose memorized backup lightpaths conflict with $\pi$, and let $\FailureSet_{\intersect}^{\pi}$ denote the set of failure scenarios associated with these conflicting backup lightpaths. Furthermore, let $\FailureSet_{\rest}^{\pi}$ denote the set of failure scenarios whose failed links intersect the candidate primary lightpath $\pi$.
+
+We now describe the simultaneous case in greater detail. In this setting, the two failed links of each scenario occur almost at the same time. Consequently, request $k$ can be granted with candidate primary lightpath $\pi$ only if every scenario in $\FailureSet_{\intersect}^{\pi}$ and $\FailureSet_{\rest}^{\pi}$ can be successfully resolved.
+
+The treatment of an intersection issue for a scenario $\FailureIdx \in \FailureSet_{\intersect}^{\pi}$ is illustrated by Figure \ref{fig:grap_color_eg}. The treatment of a restoration issue for a scenario $\FailureIdx \in \FailureSet_{\rest}^{\pi}$ follows the same graph-coloring principle, but with one important difference. Instead of inserting the new request's primary lightpath $\lightPathIdx^{\w}$ into the graph, we insert the set of candidate backup paths of request $\RequestIdx$ under the failed network state induced by $\FailureIdx$. In graph-coloring terms, this corresponds to adding a rectangle labeled by request index $k$, together with its candidate backup paths, similarly to the rectangles associated with $\RequestIdx_{4}$ and $\RequestIdx_{5}$ in Figure \ref{fig:grap_color_eg}. The coloring rules are then applied to determine a feasible backup lightpath for $\RequestIdx$ under failure scenario $\FailureIdx$.
+
+
+% the idea: for each $k$, precompute 
+
+% ------------
+% ------------
+% ------------
+
+\subsection{Sequential Scenario - SeqRDF Heuristic}
+\label{sec: SeqRDF}
+
+In the sequential case, each scenario $\FailureIdx \in \FailureSet_{\intersect}$ or $\FailureSet_{\rest}$ still consists of two failed links, but the time interval between them is long enough to restore the requests disrupted by the first failure before the second failure occurs. Since these restored requests are not rerouted again unless their restoration lightpaths are themselves affected by the second failure, the restoration solution depends on the order in which the two links fail. Consequently, two scenarios involving the same pair of failed links may lead to different solutions when their failure order is reversed. For this reason, we classify the scenarios in $\FailureSet_{\intersect}$ and $\FailureSet_{\rest}$ according to their first failed link. Figure \ref{fig:fs_classify} shows an example of this classification.
+
+Figure \ref{fig:fs_classify} illustrates two distinct situations. In the first one, corresponding to the group associated with link $\LinkIdx_{j}$, none of the affected requests is disrupted by the first failed link. In the second one, corresponding to the group associated with link $\LinkIdx_{i}$, some affected requests are already disrupted by the first failed link; we denote this set of requests by $\RequestSet^{\LinkIdx_{i}}$. These two cases require different treatments. For the $\LinkIdx_{j}$ group, the corresponding failure scenarios can be handled in the same spirit as in Figure \ref{fig:grap_color_eg}. For the $\LinkIdx_{i}$ group, however, the restoration lightpaths assigned to requests in $\RequestSet^{\LinkIdx_{i}}$ may consume resources that are also needed later by the corresponding dual-failure scenarios whose first failed link is $\LinkIdx_{i}$. We must therefore first compute restoration lightpaths for $\RequestSet^{\LinkIdx_{i}}$ under the single-failure scenario $\FailureIdx_{\LinkIdx_{i}}$, and then re-examine the dual-failure restoration lightpaths to detect and resolve any conflicts.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.2\textwidth]{Figures/algorithm_explain/seq_FS_classify.png}
+\caption{Failure scenarios classification}
+\label{fig:fs_classify}
+\end{figure}
+
+Each failure scenario is still handled through graph coloring to determine feasible lightpaths. However, unlike the simultaneous case, where each failure scenario can be resolved independently, the sequential case requires the scenarios within the same group to be treated jointly, because the restoration decisions made after the first failed link influence the resource availability seen by the second failed link. This coupling mainly arises in the group associated with link $\LinkIdx_{i}$.
+
+Figure \ref{fig:seq_gc_eg} provides an example illustrating the difficulty of the $\LinkIdx_{i}$ group. The meaning of the graph elements is similar to that in Figure \ref{fig:grap_color_eg}, except that each rectangle may now contain two kinds of candidate nodes, namely $m.p$ and $m.p.q$. Consider a dual-failure scenario $\FailureIdx = \{\LinkIdx_{i}, \LinkIdx_{j}\}$ and an affected request $\RequestIdx_{m}$. The node labeled $m$ represents the primary path of request $\RequestIdx_{m}$. A node labeled $m.p$ represents a candidate restoration path for $\RequestIdx_{m}$ after the first failed link $\LinkIdx_{i}$. If the selected path $\PathIdx_{m.p}$ is itself affected by the second failed link $\LinkIdx_{j}$, then additional nodes labeled $m.p.q$ appear in the rectangle of $\RequestIdx_{m}$; these nodes represent second-stage restoration candidates. Requests $\RequestIdx_{3}$ and $\RequestIdx_{5}$ in Figure \ref{fig:seq_gc_eg} provide examples of these situations.
+
+In Figure \ref{fig:seq_gc_eg}, the primary lightpath of the new request $\RequestIdx$ conflicts with the memorized restoration lightpaths of $\RequestIdx_{3}$ and $\RequestIdx_{5}$. Both requests belong to $\RequestSet^{\LinkIdx_{i}}$, but they do not behave in the same way. Request $\RequestIdx_{3}$ finds a restoration lightpath after the first failure on link $\LinkIdx_{i}$, and this lightpath remains unaffected by the second failure on link $\LinkIdx_{j}$. By contrast, request $\RequestIdx_{5}$ requires a second restoration decision after the occurrence of link $\LinkIdx_{j}$. The heuristic therefore proceeds in two stages: it first resolves the conflicts that arise under the first failed link $\LinkIdx_{i}$; once these first-stage conflicts have been settled, it revisits the restoration lightpaths under the second failed link $\LinkIdx_{j}$ and replaces the ones that become infeasible. In the present example, this second step amounts to reassigning the restoration lightpath of $\RequestIdx_{5}$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.32\textwidth]{Figures/algorithm_explain/seq_gc.png}
+\caption{$\LinkIdx_{i}$ group example}
+\label{fig:seq_gc_eg}
+\end{figure}
+
+As in the simultaneous case, the candidate primary lightpath $\lightPathIdx^{\w}$ is declared feasible only if every group of failure scenarios can be checked and successfully resolved. This verification ensures that the network contains sufficient resources to restore every affected request under every considered sequential dual-failure scenario. When this condition is satisfied, request $\RequestIdx$ can be admitted using primary lightpath $\lightPathIdx^{\w}$.
+
+
+
+% --------------------
+% --------------------
+% --------------------
+
+\section{Numerical Results}
+\label{sec:results}
+
+This work mainly compares the two schemes using two performance metrics: request processing time and first denial request index. Here, the request processing time denotes the time required by the algorithm to test an incoming request, that is, to determine whether the request can be granted with a feasible primary light path and the necessary backup lightpaths. According to our experiments with the setup detailed in section~\ref{sec:setup}, the simultaneous restoration scheme consistently outperforms the sequential scheme across almost all metrics, including request processing time and first denial index. In section~\ref{sec:cut_comparison}, we also address how the two algorithms perform in two failure scenario models: physical fiber cuts and directional link cuts.
+
+\Huy{We need to report the acceptance rate / blocking rate as the previous papers.}
+
+\Huy{We also need a section where we compare with a baseline.}
+
+\subsection{Experiments Setup}
+\label{sec:setup}
+
+
+To compare the performance of the two algorithms on networks of different sizes, we consider the Nobel network, with 28 nodes and 41 fibers, and the Germany50 network, with 55 nodes and 88 fibers. Figure \ref{fig:network_topology} shows the two topologies. The Germany50 network is visibly denser than the Nobel network, which provides requests with a larger number of routing choices.
+
+\begin{figure}[t]
+\centering
+\subfigure[Nobel]{
+\includegraphics[width=.43\columnwidth]{Figures/numerical_results/network_topology/nobelMap.png}
+\label{fig:nobel_topo}}
+% ---
+\subfigure[Germany]{
+\includegraphics[width=.45\columnwidth]{Figures/numerical_results/network_topology/germanyMap.png}
+\label{fig:germany_topo}}
+
+\caption{Network topology, taken from \cite{kmiecik2020performance}}
+\label{fig:network_topology}
+\end{figure}
+
+For the experiments, we set each directed link to have 30 wavelengths. For each request $\RequestIdx = (\SRC, \DST)$, we only consider candidate primary paths that are no more than $1 + \kappa$ times longer than the shortest path between $\SRC$ and $\DST$, where $\kappa$ is set to $0.1$.
+\Huy{Need to run with $\kappa = 0.5$ to see the effect of allowing more paths}
+
+We evaluated two models of dual-link failure scenarios. First, physical fiber cuts represent complete both directionsdisconnections of the links; in other words, both directed arcs of a physical link fail simultaneously. Therefore, for each dual-link failure in this case, the topology ultimately has 4 directed arcs removed. Second, directional link cuts represent unidirectional fiber or transponder impairments; in this case, a dual-failure scenario consists of 2 directed arcs.
+
+\Huy{If we increase $\kappa$, then 300 requests may not enough to evaluate performance of the two algorithms. So, if we test with $\kappa = 0.5$, we should increase the number of requests to 1000?.}
+
+The two schemes are evaluated under both uniform and real-world traffic demand distributions across 16 independent datasets of 300 requests each. For uniform traffic, each request's source-destination pairs are selected uniformly over the network nodes. For real-world traffice, we generated the datasets using demand information available from SNDlib. SNDlib provides real traffic datasets for several benchmark networks, including Germany50. For this network, the traffic data are available in three forms, as summarized in Table \ref{tab:germany50_real_traffic} (further details can be found in \cite{OrlowskiPioroTomaszewskiWessaely2010}). Each dataset consists of a demand matrix specifying the traffic volume, in Mbit/s, for every $(\SRC, \DST)$ node pair. These values are obtained by averaging the traffic over intervals of 5 minutes, 1 day, or 1 month.
+
+\begin{table}[t]
+\begin{center}
+\caption{Germany50 real traffic description}
+\label{tab:germany50_real_traffic}
+\resizebox{\columnwidth}{!}{
+  \begin{tabular}{|c|c|c|c|}
+    \hline
+    Type Name    & 5 mins over 1 day & 1 day over 1 month & 1 month over 1 year\\
+    Abbreviation & 5min1d            & 1d1m               & 1m1y\\
+    \hline
+    \multirow{2}{*}{Period}  & 2005.2.15  & 2005 & 2004.1 - 2005.2\\
+    & 00:00 - 23:55 & 2.1 - 2.28 & \\
+    \hline
+    Datasets  & 288 & 28 & 14 \\
+    \hline
+  \end{tabular}
+}
+\end{center}
+\end{table}
+
+\Huy{If we do not use the 15-minute and 1-month data, we don't need  to mentrion them.}
+To obtain sufficient traffic variability while preserving multiple $(\SRC, \DST)$ pairs in each instance, we use the 28 demand matrices from the 1d1m dataset to generate the request sequences. Figure \ref{fig:1d1m_distri} shows the distributions of these 28 matrices using box plots. We observe that the traffic values of most node pairs are relatively small, while each matrix contains a few outliers. In particular, the matrices from February 2, 2005 to February 8, 2005 each contain one $(\SRC, \DST)$ pair with exceptionally high traffic. These observations confirm that the real traffic distributions are far from uniform.
+
+To visualize the distributions more clearly, Figure \ref{fig:1d1m_log_distri} uses a logarithmic traffic scale and reports the number of $(\SRC, \DST)$ pairs in each scaled traffic interval. After logarithmic scaling, the 28 daily demand distributions appear similar and roughly bell-shaped. Most traffic values are concentrated around $10^{12} \times C_{\min}$, where $C_{\min}$ denotes the minimum traffic value. Although $C_{\min}$ may in principle vary from one day to another, we verified that for these 28 demand matrices it is always equal to $10^{-6}$ Mbps.
+% ---
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/numerical_results/non_uniform/origTraffic_boxplot.png}
+\caption{Distribution of the 28 demand matrices in the 1d1m dataset}
+\label{fig:1d1m_distri}
+\end{figure}
+% ---
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/numerical_results/non_uniform/origTraffic_log_histplot.png}
+\caption{Log-scale traffic distribution of the 28 demand matrices in the 1d1m dataset}
+\label{fig:1d1m_log_distri}
+\end{figure}
+% ---
+Although one could aggregate the 28 daily distributions into a single generic distribution, doing so would distort the real-traffic characteristics. For example, the $(src, dst)$ pair with the highest traffic is nearly the same across the 28 demand matrices; if we retained only the overall distribution while ignoring the specific node pairs, the generated requests would no longer reflect the actual traffic structure. Therefore, we generate requests according to the probability associated with each node pair. More precisely, for each demand matrix, we first compute the corresponding demand-probability matrix, and then generate one request sequence from it. 
+% To keep it simple, we generated 16 request sequences from the first 16 demand matrices, matching the uniform distribution counterpart.
+% \Huy{Please remove this 16
+
+This study assumes uniform link dimensioning, that is, the same number of wavelengths on every fiber link. Investigating the problem under optimized or non-uniform link dimensioning is beyond the scope of this work, since deciding the number and selection of wavelengths on each link is itself a difficult optimization problem \cite{sasithong2020maximizing}.
+
+\subsection{Request Processing Time Analysis}
+\label{sec:processing_time}
+The algorithimic complexity of provisioning an incoming request is measured by the request processing time in milliseconds, representing the time required to verify primary lightpath availability and construct valid restoration lightpaths in all affected failure scenarios.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/new_experiments/real_germany50/fig1_time_denial_by_dataset.png}
+\caption{Average request processing time and first denial index per dataset for SimRDF vs. SeqRDF (Germany50 Real Traffic).}
+\label{fig:time_denial_by_dataset}
+\end{figure}
+
+Figure~\ref{fig:time_denial_by_dataset} reports the average processing time per request up to the first denied request across all 16 real-traffic datasets for Germany50. We can clearly see that, in all request sequences, SeqRDF requires significantly higher average processing time than SimRDF, with up to $3.4\times$ slower on average. This processing latency gap stems directly from the underlying algorithmic structure. In SimRDF, each dual-failure scenario $f \in \FailureSet_{\affected}$ is evaluated independently using a single-stage graph-coloring routine \ComputeRestoration. In SeqRDF, failure scenarios sharing the same first failed link $e_i$ are coupled into a scenario group $\mathcal{G}_{e_i}$. Evaluating $\mathcal{G}_{e_i}$ requires a joint two-stage graph-coloring procedure \ComputeRestorationSeq, where first-stage single-failure restoration lightpaths allocated under $e_i$ must be computed first and held fixed, thereby constraining the available wavelength spectrum during the second-stage evaluation of secondary link failures $e_j$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/new_experiments/real_germany50/fig2_time_vs_denial_scatter.png}
+\caption{Correlation between request processing time and first denial request index. (Germany50 Real Traffic)}
+\label{fig:time_vs_denial_scatter}
+\end{figure}
+
+Figure ~\ref{fig:time_vs_denial_scatter} illustrates the relationship between average processing time and the first denial index. As the network provisions more requests, link capacities become increasingly congested, expanding the search space for feasible restoration paths and increasing processing latency. Furthermore, SeqRDF exhibits a wider scatter in processing time across datasets, confirming that sequential two-stage restoration is more sensitive to traffic distribution variability than simultaneous restoration. \Huy{This point is not clearly shown in the figure, there is only one point that far from other. We may need to have the run time of 28-day data set to decide wheter we'll keep this point or not.}  
+
+\subsection{Provisioning Capacity and First Denial Index Analysis}
+\label{sec:first_denial}
+
+To evaluate network provisioning capacity and service fairness, we measure the first denial request index, defined as the index of the first request in the incoming sequence that cannot be provisioned without violating the recoverability guarantees of previously admitted requests.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/new_experiments/real_germany50/fig5_unified_cumulative_granted.png}
+\caption{Cumulative granted requests trajectory over sequence index with 95\% confidence interval bands. (Germany50 Real Traffic)}
+\label{fig:unified_cumulative_granted}
+\end{figure}
+
+Figure~\ref{fig:unified_cumulative_granted} plots the cumulative granted requests trajectory for SimRDF and SeqRDF with 95\% confidence interval bands. In the early stage of request provisioning (indices 1 to 50), both schemes grant incoming requests at a near-100\% success rate. However, as link resources saturate, SeqRDF reaches its capacity knee earlier than SimRDF, causing its cumulative granted trajectory to diverge downwards.
+
+\begin{figure}[t]
+\centering
+\subfigure[SimRDF]{
+\includegraphics[width=\columnwidth]{Figures/new_experiments/real_germany50/allD_sim_boxplot.png}
+\label{fig:allD_sim_boxplot}}
+\\
+\subfigure[SeqRDF]{
+\includegraphics[width=\columnwidth]{Figures/new_experiments/real_germany50/allD_seq_boxplot.png}
+\label{fig:allD_seq_boxplot}}
+\caption{Distribution of granted requests across node pairs and first denial request index across the 16 datasets.}
+\label{fig:GD_distri_denial}
+\end{figure}
+
+The early onset of denials under real traffic is strongly driven by demand concentration. Figure~\ref{fig:GD_distri_denial} shows the distribution of granted requests per node pair alongside the first denial index for each of the 16 datasets. In datasets with heavy traffic outliers (such as Datasets 9 and 14), a small subset of high-demand $(\SRC, \DST)$ pairs consumes a disproportionate share of bottleneck link capacity, causing the first denial index to occur earlier. Under uniform traffic, where demand is spread evenly across all node pairs, the first denial typically occurs later (around request 177.6 for Germany50 uniform vs. 162.4 for real traffic), confirming that spatial traffic concentration significantly accelerates capacity exhaustion.
+\Huy{This figure is missing legends so we cannot verify if the claim is true not not. Especially, as my current understanding from the figure, many node pairs have 0 granted requests, is it true?}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/new_experiments/fig7_confidence_interval_forest.png}
+\caption{Forest plot of 85\%, 90\%, and 95\% Confidence Intervals for the first denial index difference ($\text{SimRDF} - \text{SeqRDF}$) across all 8 evaluated network, traffic, and failure cut configurations.}
+\label{fig:ci_forest}
+\end{figure}
+
+To quantify the statistical significance of the capacity gap between the two failure modes, Figure~\ref{fig:ci_forest} presents a unified forest plot of the 85\%, 90\%, and 95\% confidence intervals for the first denial difference ($\text{SimRDF} - \text{SeqRDF}$) across all 8 experimental configurations (spanning Germany50 and Nobel-EU topologies, uniform and real-world traffic distributions, and physical versus directional failure models). Across all four uniform-traffic configurations, the 95\% confidence intervals lie strictly in the positive domain, confirming that SimRDF systematically delays the first denial relative to SeqRDF. For example, under Germany50 uniform traffic with directional cuts, SimRDF grants 7.8 additional requests before the first denial on average compared to SeqRDF (95\% CI: 1.97 to 13.65). Under real-traffic configurations, the mean difference remains non-negative but the confidence intervals are narrower and may include zero, reflecting the tighter capacity bottlenecks imposed by spatially concentrated demand.
+
+\subsection{Bandwidth Utilization and Protection Capacity Overhead}
+\label{sec:utilization}
+
+To understand the resource exhaustion mechanics underlying early denials, we analyze optical bandwidth utilization and the overhead trajectory of protection capacity over time.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{Figures/new_experiments/real_germany50/fig3_bandwidth_utilization_mean.png}
+\caption{Mean bandwidth utilization trajectory over request sequence index for SimRDF vs. SeqRDF. (Germany50 Real Traffic)}
+\label{fig:bw_utilization}
+\end{figure*}
+
+Figure~\ref{fig:bw_utilization} illustrates the total primary, backup, and combined bandwidth utilization (measured in wavelength-link slots) as requests arrive. Initially, total bandwidth utilization grows linearly for both schemes. However, SeqRDF consumes backup capacity at a faster rate than SimRDF. This increased consumption occurs because SeqRDF must reserve restoration paths for first-stage single failures $e_i$ before second-stage failures $e_j$, restricting the opportunities to share backup wavelengths among non-overlapping failure scenarios. \Huy{We need to improve the presentation of this figure. It does not clearly show the difference between the two schemes.}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{Figures/new_experiments/real_germany50/fig6_pure_backup_ratio.png}
+\caption{Protection overhead ratio over request sequence index. (Germany50 Real Traffic)}
+\label{fig:pure_backup_ratio}
+\end{figure}
+
+Figure~\ref{fig:pure_backup_ratio} tracks the protection overhead ratio, defined as the ratio of pure backup bandwidth to primary bandwidth ($\text{BW}_{\text{backup}} / \text{BW}_{\text{primary}}$). Under SimRDF, higher backup sharing efficiency maintains a consistently lower protection ratio compared to SeqRDF throughout the entire request sequence. As requests accumulate, the ratio decreases from approximately 5.5 initially to 3.6 at 300~requests under SimRDF, versus from 5.8 down to 4.0 under SeqRDF, representing a 4\% to 9\% reduction in protection capacity overhead. This gap arises because SeqRDF's sequential restoration constraints reduce backup sharing efficiency, driving the protection ratio higher. The resulting higher protection overhead rapidly exhausts available wavelengths on critical bottleneck links, explaining why SeqRDF experiences earlier request denials.
+
+
+\subsection{Failure Scenario: Physical cuts vs. Directional cuts}
+\label{sec:cut_comparison}
+
+Finally, we analyze the impact of failure scenario modeling by contrasting physical fiber cuts (4 directed arcs removed per dual failure) against directional link cuts (2 directed arcs removed per dual failure) in the unified confidence interval plot of Figure~\ref{fig:ci_forest}.
+
+Comparing the physical cut configurations (top four intervals in Figure~\ref{fig:ci_forest}) with the directional cut configurations (bottom four intervals) reveals two key insights. First, although directional cuts remove only 2 directed arcs per failure scenario (versus 4 for physical cuts), the number of valid dual-failure scenarios increases by approximately $4\times$ (e.g., from 7,634 to 30,756 on Germany50). This scenario explosion creates a denser intersection of protection constraints across candidate backup paths, which offsets the per-scenario topological advantage of removing fewer arcs. Consequently, the first denial index under directional cuts is comparable to or up to 9\% earlier than under physical fiber cuts (e.g., 159.5 vs.\ 175.6 average first denial on Germany50 with uniform traffic). Second, despite this shift in constraint density, the capacity advantage of SimRDF over SeqRDF remains consistent and, in several configurations, becomes more pronounced. In three of the four directional cut configurations, the 95\% confidence intervals for $(\text{SimRDF} - \text{SeqRDF})$ remain strictly positive, and the mean difference under Germany50 uniform traffic with directional cuts doubles from $+4.0$ (physical) to $+7.8$ (directional), demonstrating that sequential failure chronology and two-stage spectrum coupling systematically accelerate request denials even as protection constraint density intensifies.
+
+\Huy{We should not only compare the directional and undirectional cases only on the first-denial metric. It is better to add also the acceptance rate.}
+
+
+\section{Conclusions}
+\label{sec: conclu}
+
+Dual-link failure scenarios can be classified into two cases, simultaneous and sequential, which differ primarily in the time interval between the two link failures. In the sequential case, the time available after the first failure allows some disrupted requests to be restored before the second failure occurs; consequently, the restoration solution for a given pair of failed links may differ from that of the simultaneous case. In this work, we compare the performance of the two schemes in terms of request processing time and first denial request index. The numerical results show that the sequential scheme consistently requires higher processing effort and, in most cases, reaches the first denied request earlier than the simultaneous scheme. This trend is observed under both uniform and real traffic distributions, which indicates that the stronger resource coupling induced by sequential restoration has a systematic impact on performance rather than being an artifact of a particular traffic pattern.
+
+\clearpage
+\bibliographystyle{IEEEtran}
+\bibliography{IEEEabrv,Biblio/Restoration,Biblio/coloring,Biblio/5G}
+
+% that's all folks
+\end{document}
+
