@@ -13,6 +13,7 @@ Prepares and validates:
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import heapq
 import math
@@ -60,19 +61,16 @@ DEFAULT_LOCAL_NATIVE_ARCHIVES: list[Path] = [
     Path(os.environ.get("SNDLIB_NATIVE_ARCHIVE", ""))
     if os.environ.get("SNDLIB_NATIVE_ARCHIVE")
     else Path(),
-    REPO_ROOT.parent
-    / "dual_link_failure_2026"
-    / "tuasananh"
-    / "sndlib-networks-native.tgz",
+    REPO_ROOT / "data" / "archives" / "sndlib-networks-native.tgz",
 ]
 
 DEFAULT_LOCAL_1D1M_ARCHIVES: list[Path] = [
     Path(os.environ.get("SNDLIB_1D1M_ARCHIVE", ""))
     if os.environ.get("SNDLIB_1D1M_ARCHIVE")
     else Path(),
-    REPO_ROOT.parent
-    / "dual_link_failure_2026"
-    / "tuasananh"
+    REPO_ROOT
+    / "data"
+    / "archives"
     / "directed-germany50-DFN-aggregated-1day-over-1month-native.tgz",
 ]
 
@@ -381,6 +379,10 @@ def parse_sndlib_native_demands(
                 raise ValueError(
                     f"Invalid demand value in {txt_path}: ({src_name}, {dst_name})={val}"
                 )
+            if (u, v) in demands:
+                raise ValueError(
+                    f"Duplicate demand entry in {txt_path}: ({src_name}, {dst_name})"
+                )
             demands[(u, v)] = val
 
     if parsed_nodes and parsed_nodes != [
@@ -571,17 +573,30 @@ def write_and_verify_manifest(streams_dir: Path) -> list[tuple[str, str]]:
     tmp.write_text("".join(manifest_lines), encoding="utf-8", newline="\n")
     tmp.replace(manifest_path)
 
-    # Re-read and verify every entry in manifest.sha256.
-    for line in manifest_path.read_text(encoding="utf-8").splitlines():
-        expected_hash, rel_posix = line.split("  ", maxsplit=1)
-        actual_hash = sha256_file(streams_dir / rel_posix)
-        if actual_hash != expected_hash:
-            raise RuntimeError(f"SHA-256 verification failed for {rel_posix}")
-
+    verify_manifest_integrity(manifest_path)
     return entries
 
 
-def prepare_all() -> None:
+def verify_manifest_integrity(manifest_path: Path) -> int:
+    """Verifies that all files listed in manifest.sha256 exist and match their SHA-256 digests."""
+    streams_dir = manifest_path.parent
+    lines = [
+        line.strip()
+        for line in manifest_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    for line in lines:
+        expected_hash, rel_posix = line.split("  ", maxsplit=1)
+        file_path = streams_dir / rel_posix
+        if not file_path.exists():
+            raise RuntimeError(f"Missing stream file listed in manifest: {rel_posix}")
+        actual_hash = sha256_file(file_path)
+        if actual_hash != expected_hash:
+            raise RuntimeError(f"SHA-256 verification failed for {rel_posix}")
+    return len(lines)
+
+
+def prepare_all(force: bool = False) -> None:
     """Executes full Phase 1 dataset ingestion, validation, stream freezing, and manifest sign-off."""
     ensure_raw_datasets()
 
@@ -622,7 +637,19 @@ def prepare_all() -> None:
         germany_daily_demands.append(day_demands)
 
     # Clean stream directories before deterministic generation so stale files never linger.
-    if STREAMS_DIR.exists():
+    if STREAMS_DIR.exists() and any(STREAMS_DIR.iterdir()):
+        manifest_path = STREAMS_DIR / "manifest.sha256"
+        if not force:
+            if manifest_path.exists():
+                count = verify_manifest_integrity(manifest_path)
+                print(
+                    f"[INFO] Streams directory already exists with verified manifest "
+                    f"({count} files OK). Use --force to regenerate."
+                )
+                return
+            print(
+                "[WARNING] Streams directory exists but manifest is missing. Regenerating..."
+            )
         shutil.rmtree(STREAMS_DIR)
     STREAMS_DIR.mkdir(parents=True, exist_ok=True)
     EXP3_PERMS_DIR.mkdir(parents=True, exist_ok=True)
@@ -693,4 +720,13 @@ def prepare_all() -> None:
 
 
 if __name__ == "__main__":
-    prepare_all()
+    parser = argparse.ArgumentParser(
+        description="ToN 2026 Phase 1 dataset ingestion and stream freezing tool."
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force regeneration and overwrite of existing frozen streams.",
+    )
+    args = parser.parse_args()
+    prepare_all(force=args.force)
