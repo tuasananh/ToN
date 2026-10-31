@@ -14,7 +14,7 @@
 
 ## 1. Purpose & Why This Baseline Is Used
 
-`GreedySimRDF` and `GreedySeqRDF` serve **two critical scientific roles** in `ToN_2026.tex`:
+`GreedySimRDF` and `GreedySeqRDF` serve **two critical scientific roles** in `paper/ToN_2026.tex`:
 
 1. **Verifying Cross-Algorithm Generality of Simultaneous vs. Sequential Trends:**
    Because the paper's central focus is comparing **simultaneous** versus **sequential** dual-link failure restoration, evaluating both `GreedySimRDF` and `GreedySeqRDF` proves that the structural capacity, blocking, and protection-overhead differences between simultaneous and sequential failures are **fundamental physical properties of the failure timing regimes**—not artifacts specific to our DSATUR coloring heuristic.

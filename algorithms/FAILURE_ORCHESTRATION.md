@@ -14,7 +14,7 @@
 
 ## 1. Role & Why Two Orchestration Regimes Are Modeled
 
-The central scientific objective of `ToN_2026.tex` is to compare proactive optical restoration under **simultaneous** versus **sequential** dual-link failures:
+The central scientific objective of `paper/ToN_2026.tex` is to compare proactive optical restoration under **simultaneous** versus **sequential** dual-link failures:
 - **Simultaneous Orchestration** models concurrent dual cuts $\{x_1, x_2\} \in \mathcal{F}_{\text{sim}}$ where both failure units are already severed before recovery initiates. Each unordered pair is an independent single-stage restoration subproblem.
 - **Sequential Orchestration** models realistic staggered cuts $(x_1, x_2) \in \mathcal{F}_{\text{seq}}$ where $x_2$ fails during the Mean Time to Repair of $x_1$. Because the optical control plane observes **only $x_1$** during Stage 1, $x_2$ remains healthy and usable during Stage-1 recovery, coupling all scenarios in $\mathcal{G}_{x_1} = \{(x_1, x_2) \in \mathcal{F}_{\text{seq}}\}$ to a **single Stage-1 allocation** and locking any Stage-1 backup that avoids $x_2$ during Stage 2.
 
@@ -84,6 +84,6 @@ To mirror physical causality—where Stage-1 restoration reacts to $x_1$ before 
 ## 4. Rationale for Full-Scenario Disrupted Batching ($U_F$)
 
 When dynamic backup reconfiguration is enabled (`DSATUR` and `Greedy First-Fit`), placing **all** non-fixed disrupted requests of scenario $F$ into $U_F$—rather than recoloring only the single backup directly hit by a surviving primary—is theoretically essential for two reasons:
-1. **Multi-Step Cascade Repacking:** If existing backup $r_1$ on $\lambda_{29}$ is displaced by a surviving new primary and $r_1$'s only alternative slot is $\lambda_{28}$ currently held by $r_2$, full-batch recoloring allows $r_2$ to shift cleanly to $\lambda_{27}$ so $r_1$ can take $\lambda_{28}$, admitting requests that single-hop recoloring would falsely block.
+1. **Multi-Step Cascade Repacking:** If existing backup $r_1$ on $\lambda_{31}$ is displaced by a surviving new primary and $r_1$'s only alternative slot is $\lambda_{30}$ currently held by $r_2$, full-batch recoloring allows $r_2$ to shift cleanly to $\lambda_{29}$ so $r_1$ can take $\lambda_{30}$, admitting requests that single-hop recoloring would falsely block.
 2. **Zero Unnecessary Churn Under Incumbency Stability:** In `DSATUR`, the parameter-free incumbency penalty ($\beta_{\text{inertia}} = 1/W$) ensures requests in $U_F$ that do not impede constrained neighbors remain locked on their existing slots, combining full multi-step repacking flexibility with minimal spectrum disturbance.
 

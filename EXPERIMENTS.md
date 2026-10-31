@@ -1,6 +1,6 @@
 # Experimental Methodology, Focused Benchmark Suite & Overnight Runtime Analysis (ToN 2026)
 
-> **Document Purpose:** This document establishes the streamlined experimental design, methodological fairness invariants, theoretical time-complexity & laptop wall-clock runtime budget, and statistical reporting protocol for the IEEE/ACM *Transactions on Networking* (ToN) submission `Writing/ToN_2026.tex`. The experimental scope is tightly centered on the paper's core scientific thesis—**Simultaneous vs. Sequential Dual-Link Failure Restoration**—using the comparative baselines (`Greedy First-Fit` and `Immutable No-Reroute`) both to verify that simultaneous-vs.-sequential laws hold across distinct algorithmic paradigms and to demonstrate the superiority of `Proposed DSATUR`. Problem definitions and step-indexed metrics are defined in `PROBLEM.md`; modular algorithm specifications live in `ALGORITHMS.md` and `algorithms/`.
+> **Document Purpose:** This document establishes the streamlined experimental design, methodological fairness invariants, theoretical time-complexity & laptop wall-clock runtime budget, and statistical reporting protocol for the IEEE/ACM *Transactions on Networking* (ToN) submission `paper/ToN_2026.tex`. The experimental scope is tightly centered on the paper's core scientific thesis—**Simultaneous vs. Sequential Dual-Link Failure Restoration**—using the comparative baselines (`Greedy First-Fit` and `Immutable No-Reroute`) both to verify that simultaneous-vs.-sequential laws hold across distinct algorithmic paradigms and to demonstrate the superiority of `Proposed DSATUR`. Problem definitions and step-indexed metrics are defined in `PROBLEM.md`; modular algorithm specifications live in `ALGORITHMS.md` and `algorithms/`.
 
 ---
 
@@ -8,7 +8,7 @@
 1. [Focused Paper Scope & Experimental Design Principles](#1-focused-paper-scope--experimental-design-principles)
 2. [Symmetric Topologies & Traffic Datasets (`Nobel-EU` & `Germany50`)](#2-symmetric-topologies--traffic-datasets-nobel-eu--germany50)
 3. [Seven Pillars of Methodological Fairness](#3-seven-pillars-of-methodological-fairness)
-4. [The Lean Two-Experiment Paper Suite (`EXP-1` & `EXP-2`)](#4-the-lean-two-experiment-paper-suite-exp-1--exp-2)
+4. [The Lean Three-Experiment Paper Suite (`EXP-1`, `EXP-2` & `EXP-3`)](#4-the-lean-three-experiment-paper-suite-exp-1-exp-2--exp-3)
 5. [Time Complexity, Operation-Count Runtime Estimate & 8-P-Core Laptop Protocol](#5-time-complexity-operation-count-runtime-estimate--8-p-core-laptop-protocol)
 6. [Statistical Aggregation, Visualization & Mandatory Invariant Auditing](#6-statistical-aggregation-visualization--mandatory-invariant-auditing)
 
@@ -22,7 +22,8 @@ Rather than diluting the manuscript across excessive parameter sweeps, the exper
    - *Paradigm Invariance:* The physical differences between Simultaneous and Sequential regimes persist consistently across intelligent graph coloring, static First-Fit, and immutable control planes.
    - *Heuristic Superiority:* `Proposed DSATUR` achieves higher admitted throughput and lower iso-throughput protection overhead than both baselines without tuned hyperparameters.
 3. **Physical Cut Granularity (`EXP-1` vs. `EXP-2`):** Evaluate both **Standard Bidirectional Span Cuts** ($4$ severed arcs) and **Directional Arc Cuts** ($2$ severed arcs, scaling up to $30,756$ ordered scenarios on Germany50).
-4. **Fixed Routing Configuration (Zero Parameter Sprawl):** All runs fix $W = 30$, $T = 1,000$ requests/run, Geographic Fiber Distance (Haversine km from SNDlib node coordinates), $\kappa = 0.10$, and $K_{\max} = 10$.
+4. **Online Arrival-Order Deconfounding (`EXP-3`):** Isolate pure arrival-order permutation sensitivity from demand-multiset variance by evaluating $28$ random shuffles plus $2$ deterministic structural boundary orders (`Shortest-First` and `Longest-First`) of a fixed Realistic SNDlib $1,000$-request multiset on each topology.
+5. **Fixed Routing Configuration (Zero Parameter Sprawl):** All runs fix $W = 32$, $T = 1,000$ requests/run, Geographic Fiber Distance (Haversine km from SNDlib node coordinates), $\kappa = 0.10$, and $K_{\max} = 10$.
 
 ---
 
@@ -53,18 +54,19 @@ To ensure both benchmark networks are evaluated under **identical, symmetric tra
 
 ---
 
-## 4. The Lean Two-Experiment Paper Suite (`EXP-1` & `EXP-2`)
+## 4. The Lean Three-Experiment Paper Suite (`EXP-1`, `EXP-2` & `EXP-3`)
 
-All research questions, spectral trajectories, and latency profiles in `ToN_2026.tex` are answered by **just two clean, symmetric experiments** (zero extra parameter sweeps):
+All research questions, spectral trajectories, arrival-order stability checks, and latency profiles in `paper/ToN_2026.tex` are answered by **three focused experiments** (`1,704` runs total, zero parameter sprawl):
 
 ```mermaid
 flowchart LR
-    Datasets["2 Topologies (Nobel-EU, Germany50) x 2 Traffic Sets (SNDlib Realistic, Uniform) x 28 Seeds"] --> EXP1["EXP-1: Bidirectional Span Cuts (I = E)"]
-    Datasets --> EXP2["EXP-2: Directional Arc Cuts (I = L)"]
-    EXP1 --> Grid1["6 Algorithms: SimRDF vs SeqRDF | GreedySim vs GreedySeq | NoRerouteSim vs NoRerouteSeq"]
-    EXP2 --> Grid2["6 Algorithms: SimRDF vs SeqRDF | GreedySim vs GreedySeq | NoRerouteSim vs NoRerouteSeq"]
-    Grid1 --> Metrics["Recorded After Every Request t=0..999: Admitted/Blocked, Latency, U_prim, U_back, U_pure, U_stub, Overhead"]
-    Grid2 --> Metrics
+    Datasets["2 Topologies (Nobel-EU, Germany50) x 2 Traffic Sets (SNDlib Realistic, Uniform) x 28 Seeds"] --> EXP1["EXP-1: Bidirectional Span Cuts (I = E, 672 Runs)"]
+    Datasets --> EXP2["EXP-2: Directional Arc Cuts (I = L, 672 Runs)"]
+    FixedSet["Fixed Seed-1 Realistic Multiset (1,000 Reqs/Topo) x (28 Shuffles + 2 Boundary Orders)"] --> EXP3["EXP-3: Permutation Sensitivity (I = E, 360 Runs)"]
+    EXP1 --> Grid["6 Algorithms: SimRDF vs SeqRDF | GreedySim vs GreedySeq | NoRerouteSim vs NoRerouteSeq"]
+    EXP2 --> Grid
+    EXP3 --> Grid
+    Grid --> Metrics["Recorded After Every Request t=0..999: Admitted/Blocked, Latency, U_prim, U_back, U_pure, U_stub, Overhead"]
 ```
 
 ### `EXP-1`: Simultaneous vs. Sequential Restoration Under Bidirectional Span Cuts ($\mathcal{I} = E$)
@@ -82,13 +84,25 @@ flowchart LR
   - How unidirectional fiber/amplifier cuts reshape Simultaneous vs. Sequential contention, surviving detour diversity, and protection multiplexing relative to bidirectional conduit cuts (`EXP-1`);
   - Computational scalability and per-request decision latency $T_{\text{req}}(t)$ across scenario multiplicities spanning nearly two orders of magnitude ($804 \to 30,756$ scenarios).
 
+### `EXP-3`: Online Arrival-Order Permutation Sensitivity on a Fixed Demand Multiset ($\mathcal{I} = E$)
+- **Motivation:** In `EXP-1` and `EXP-2`, independent sequences vary *both* the demand multiset (e.g., $28$ distinct daily DFN matrices on Germany50) *and* the arrival order. Because working primary lightpaths are immutable once admitted, `EXP-3` fixes a **single canonical Realistic SNDlib $1,000$-request multiset $\mathcal{M}_0$** per topology (Seed $1$ on Nobel-EU; Day $1$ `1d1m` on Germany50) under Bidirectional Span Cuts and varies **only** the arrival permutation $\sigma$ across $30$ orderings (paired across all $6$ algorithms):
+  1. **$28$ Uniform Random Permutations ($\sigma_1, \dots, \sigma_{28}$):** Independent uniform bijections of $\mathcal{M}_0$, quantifying pure arrival-order dispersion ($\text{Mean} \pm \text{SD}$, coefficient of variation $\text{CV} = \text{SD}/\text{Mean}$, and interquartile range).
+  2. **$2$ Deterministic Structural Boundary Orders ($\sigma_{\text{short}}, \sigma_{\text{long}}$):**
+     - **`Shortest-First` ($\sigma_{\text{short}}$):** Demands of $\mathcal{M}_0$ sorted in ascending order of healthy shortest-path distance $d_G(s, d)$ (ties broken by base index), testing early short-path packing prior to long-haul arrivals.
+     - **`Longest-First` ($\sigma_{\text{long}}$):** Demands of $\mathcal{M}_0$ sorted in descending order of $d_G(s, d)$ (ties broken by base index), testing early long-haul trunk commitment prior to peripheral arrivals.
+- **Runs:** $2 \text{ topologies} \times (28 + 2) \text{ permutations} \times 6 \text{ algorithms} = \mathbf{360 \text{ runs}}$ ($1,000$ requests each).
+- **Questions Answered:**
+  - *Order Invariance of `Sim > Seq`:* Paired Wilcoxon test across $(\sigma_1, \dots, \sigma_{28})$ confirming that Simultaneous restoration outperforms Sequential restoration across random permutations of the **exact same offered traffic**;
+  - *Metric Stability ($I_{\text{denial}}$ vs. $K_{\text{granted}}$):* Contrasting arrival-order variance of order-statistic first denial $I_{\text{denial}}$ against cumulative throughput $K_{\text{granted}}$ and protection overhead $\rho_{\text{overhead}}$, bracketed by `Shortest-First` and `Longest-First`;
+  - *Dynamic Repacking Resilience:* Quantifying how dynamic backup reconfiguration (`Proposed DSATUR`) dampens arrival-order lock-in relative to frozen backups (`Immutable No-Reroute`).
+
 ---
 
 ## 5. Time Complexity, Operation-Count Runtime Estimate & 8-P-Core Laptop Protocol
 
 ### 5.1 Why Legacy Interpreted Runs Took Days—And How Exact Theory Eliminates the Bottleneck
 Previously, running even $300$ requests in an interpreted environment required multiple days due to three compounding factors:
-1. **Per-Wavelength Interpreted Set Loops vs. Word-Level Parallelism:** Checking $W = 30$ wavelengths across $\bar{H} \approx 5$ hops via high-level set objects costs $\sim 10^4\text{ ns}$ per route check, whereas representing $\Lambda$ ($W = 30 \le 32$) as a single $32$-bit word evaluates all $30$ wavelengths simultaneously in $\bar{H}$ word operations ($\sim 1\text{–}2\text{ ns}$). Moreover, on Germany50 Directional ($30,756 \times 176$ scenario-arc pairs), the entire $32$-bit scenario occupancy representation occupies **$20.65\text{ MiB}$**—fitting completely inside a **$36\text{ MiB}$ L3 cache**.
+1. **Per-Wavelength Interpreted Set Loops vs. Word-Level Parallelism:** Checking $W = 32$ wavelengths across $\bar{H} \approx 5$ hops via high-level set objects costs $\sim 10^4\text{ ns}$ per route check, whereas representing $\Lambda$ ($W = 32$) as an exact $32$-bit machine word evaluates all $32$ wavelengths simultaneously in $\bar{H}$ word operations ($\sim 1\text{–}2\text{ ns}$) with zero unused bits. Moreover, on Germany50 Directional ($30,756 \times 176$ scenario-arc pairs), the entire $32$-bit scenario occupancy representation occupies **$20.65\text{ MiB}$**—fitting completely inside a **$36\text{ MiB}$ L3 cache**.
 2. **Elimination of Quadratic Route-Pair LCV ($|\mathcal{C}|^2$) & Redundant Wipeout Scans:** By Theorems 1 and 2 in `algorithms/DSATUR_HEURISTIC.md` Section 4:
    - 1-step Forward Checking is **bypassed in $O(1)$ time** whenever $\omega_{\lambda}(r^*) \ge 2$ ($>98\%$ of coloring steps);
    - Link-Factored Contention Potential $\Psi(\ell, \lambda)$ scores each candidate $(p, \lambda)$ in $O(\bar{H})$ additions instead of $O(|U| \cdot |\mathcal{C}|)$ pairwise route intersections, dropping DSATUR's per-state cost to $O\big(|U| \cdot (1 + d_{\text{hit}}) \cdot |\mathcal{C}| \cdot W \cdot \bar{H} + |U|^2\big)$.
@@ -99,35 +113,36 @@ Previously, running even $300$ requests in an interpreted environment required m
    These three rules preserve **100% identical mathematical outputs** while refuting infeasible primary trials in **$1\text{–}4$ scenario evaluations** instead of thousands.
 
 ### 5.2 Quantitative Operation-Count & Wall-Clock Runtime Estimate
-For typical disrupted batch sizes $|U| \approx 10\text{–}25$ (bounded by primary load on $2$ cut spans/arcs), $|\mathcal{C}| \approx 3\text{–}5$ ($\kappa = 0.10$), $\bar{H} \approx 5$ hops, and $W = 30$:
+For typical disrupted batch sizes $|U| \approx 10\text{–}25$ (bounded by primary load on $2$ cut spans/arcs), $|\mathcal{C}| \approx 3\text{–}5$ ($\kappa = 0.10$), $\bar{H} \approx 5$ hops, and $W = 32$:
 - **Per-Scenario Solve Time (1 P-Core):** $\sim 3\text{–}8\text{ }\mu\text{s}$ for `Proposed DSATUR`; $\sim 0.8\text{ }\mu\text{s}$ for `Greedy First-Fit`; $\sim 0.15\text{ }\mu\text{s}$ for `No-Reroute`.
 - **Single $1,000$-Request Sequence Wall-Clock Time (1 P-Core, Conservative Estimate With $3\times$ Headroom):**
 
-| Experiment & Topology | Scenarios ($\|\mathcal{F}_{\text{sim}}\|$ / $\|\mathcal{F}_{\text{seq}}\|$) | `SeqRDF` ($1$ Seed) | `SimRDF` ($1$ Seed) | Baselines Combined ($4$ Algs, $1$ Seed) | Total Core-Time ($28$ Seeds $\times 2$ Traffics) | **Wall Time on $8$ P-Cores** |
+| Experiment & Topology | Scenarios ($\|\mathcal{F}_{\text{sim}}\|$ / $\|\mathcal{F}_{\text{seq}}\|$) | `SeqRDF` ($1$ Seq) | `SimRDF` ($1$ Seq) | Baselines Combined ($4$ Algs, $1$ Seq) | Total Core-Time (All Seqs) | **Wall Time on $8$ P-Cores** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`EXP-1` Nobel-EU (Span)** | $804$ / $1,608$ | $\sim 1.5\text{ s}$ | $\sim 0.8\text{ s}$ | $\sim 0.7\text{ s}$ | $\sim 168\text{ core-s}$ | **$< 1\text{ min}$** |
-| **`EXP-1` Germany50 (Span)** | $3,817$ / $7,634$ | $\sim 5\text{ s}$ | $\sim 2.5\text{ s}$ | $\sim 2.0\text{ s}$ | $\sim 532\text{ core-s}$ | **$\sim 1.2\text{ min}$** |
-| **`EXP-2` Nobel-EU (Dir)** | $3,289$ / $6,578$ | $\sim 4\text{ s}$ | $\sim 2.0\text{ s}$ | $\sim 1.5\text{ s}$ | $\sim 420\text{ core-s}$ | **$\sim 1.0\text{ min}$** |
-| **`EXP-2` Germany50 (Dir)** | $15,378$ / $30,756$ | $\sim 25\text{ s}$ | $\sim 12\text{ s}$ | $\sim 8.0\text{ s}$ | $\sim 2,520\text{ core-s}$ | **$\sim 5.5\text{ min}$** |
-| **Complete Paper Suite (`1,344` Runs)** | **All Scales** | — | — | — | **$\sim 3,640\text{ core-s}$** | **$\sim 8\text{–}15\text{ min}$** *(or $\le 1.5\text{ hr}$ under $6\times$ worst-case margin)* |
+| **`EXP-1` Nobel-EU (Span, $56$ Seqs)** | $804$ / $1,608$ | $\sim 1.5\text{ s}$ | $\sim 0.8\text{ s}$ | $\sim 0.7\text{ s}$ | $\sim 168\text{ core-s}$ | **$< 1\text{ min}$** |
+| **`EXP-1` Germany50 (Span, $56$ Seqs)** | $3,817$ / $7,634$ | $\sim 5\text{ s}$ | $\sim 2.5\text{ s}$ | $\sim 2.0\text{ s}$ | $\sim 532\text{ core-s}$ | **$\sim 1.2\text{ min}$** |
+| **`EXP-2` Nobel-EU (Dir, $56$ Seqs)** | $3,289$ / $6,578$ | $\sim 4\text{ s}$ | $\sim 2.0\text{ s}$ | $\sim 1.5\text{ s}$ | $\sim 420\text{ core-s}$ | **$\sim 1.0\text{ min}$** |
+| **`EXP-2` Germany50 (Dir, $56$ Seqs)** | $15,378$ / $30,756$ | $\sim 25\text{ s}$ | $\sim 12\text{ s}$ | $\sim 8.0\text{ s}$ | $\sim 2,520\text{ core-s}$ | **$\sim 5.5\text{ min}$** |
+| **`EXP-3` Both Topos (Span, $30$ Perms/Topo)** | $804\text{–}3,817$ / $1,608\text{–}7,634$ | $\sim 1.5\text{–}5\text{ s}$ | $\sim 0.8\text{–}2.5\text{ s}$ | $\sim 0.7\text{–}2.0\text{ s}$ | $\sim 375\text{ core-s}$ | **$< 1.0\text{ min}$** |
+| **Complete Paper Suite (`1,704` Runs)** | **All Scales** | — | — | — | **$\sim 4,015\text{ core-s}$** | **$\sim 9\text{–}16\text{ min}$** *(or $\le 1.6\text{ hr}$ under $6\times$ worst-case margin)* |
 
 ### 5.3 Hybrid Laptop Execution Protocol (Dedicated 8-P-Core Pinning)
 On a hybrid laptop architecture featuring **8 Performance cores (P-cores) + 16 Efficient cores (E-cores)** with a unified **$36\text{ MiB}$ L3 cache**:
 1. **Seed-Level Worker Parallelism Pinned Strictly to Physical P-Cores:**
    Run **8 independent single-threaded experiment workers in parallel**, pinning **1 worker per physical P-core** (leaving the P-core SMT sibling thread idle to prevent L1/L2 cache thrashing and execution-port contention).
 2. **Zero Interference With Interactive Laptop Usage:**
-   All **16 E-cores** remain $100\%$ unallocated to experiment workers, leaving the OS scheduler, desktop UI, browser, and editor completely responsive while experiments run in the background—and easily completing the entire $1,344$-run paper campaign well within a single evening (or $< 1\text{ hour}$).
+   All **16 E-cores** remain $100\%$ unallocated to experiment workers, leaving the OS scheduler, desktop UI, browser, and editor completely responsive while experiments run in the background—and easily completing the entire $1,704$-run paper campaign well within a single evening (or $< 1\text{ hour}$).
 3. **Thermal & Clock-Frequency Fairness for Latency Comparisons:**
-   To prevent thermal throttling drift from biasing `SimRDF` vs. `SeqRDF` or `DSATUR` vs. `Greedy` latency ratios, interleave the $6$ algorithms **within the same seed batch** (i.e., run all $6$ algorithms for Seed $1$, then Seed $2$, $\dots$) under a steady sustained power profile so every algorithm experiences identical CPU thermal state.
+   To prevent thermal throttling drift from biasing `SimRDF` vs. `SeqRDF` or `DSATUR` vs. `Greedy` latency ratios, interleave the $6$ algorithms **within the same sequence batch** (i.e., run all $6$ algorithms for Sequence $1$, then Sequence $2$, $\dots$) under a steady sustained power profile so every algorithm experiences identical CPU thermal state.
 
 ---
 
 ## 6. Statistical Aggregation, Visualization & Mandatory Invariant Auditing
 
-### 6.1 Statistical Reporting Across $S = 28$ Paired Sequences
-1. **Summary Tables:** Report $\text{Mean} \pm \text{SD}$ and $95\%$ confidence intervals for $I_{\text{denial}}$, $K_{\text{granted}}$, blocking probability $B$, pre-denial latency $T_{\text{avg}}$, full-stream latency, and protection overhead $\rho_{\text{overhead}}$.
-2. **Paired Non-Parametric Significance:** Report two-sided **paired Wilcoxon signed-rank $p$-values** and mean paired relative differences across the $28$ paired sequences for both `Simultaneous vs. Sequential` and `Proposed DSATUR vs. Baselines`.
+### 6.1 Statistical Reporting Across $S = 28$ Paired Sequences & $30$ Permutations
+1. **Summary Tables:** Report $\text{Mean} \pm \text{SD}$ and $95\%$ confidence intervals for $I_{\text{denial}}$, $K_{\text{granted}}$, blocking probability $B$, pre-denial latency $T_{\text{avg}}$, full-stream latency, and protection overhead $\rho_{\text{overhead}}$ (plus $\text{CV} = \text{SD}/\text{Mean}$ and `[Shortest-First, Longest-First]` boundary values in `EXP-3`).
+2. **Paired Non-Parametric Significance:** Report two-sided **paired Wilcoxon signed-rank $p$-values** and mean paired relative differences across the $28$ paired sequences (`EXP-1`, `EXP-2`) and across the $28$ paired random permutations (`EXP-3`) for both `Simultaneous vs. Sequential` and `Proposed DSATUR vs. Baselines`.
 3. **Step-Indexed & Iso-Throughput Curves:** Plot $U_{\text{prim}}(t), U_{\text{back}}(t), U_{\text{pure}}(t), U_{\text{stub}}(t), \rho_{\text{overhead}}(t)$ across arrival index $t \in [0, 999]$ ($\text{Mean} \pm 1\text{ SD}$ bands) alongside load-matched curves indexed by admitted traffic volume $|K_{\text{adm}}|$.
 
 ### 6.2 Mandatory 5-Invariant State Verification
-Every completed run out of the $1,344$ total runs is audited against all five **System Invariants** in Section 9 of `PROBLEM.md` (primary clash-freedom, $100\%$ $(\kappa, K_{\max})$-valid clash-free survivability across every scenario, Stage-1 $\mathcal{G}_{x_1}$ coupling equality, Stage-2 locked preservation of surviving Stage-1 backups, and exact Stub-Release boundaries). Any violation invalidates and halts aggregation immediately.
+Every completed run out of the $1,704$ total runs is audited against all five **System Invariants** in Section 9 of `PROBLEM.md` (primary clash-freedom, $100\%$ $(\kappa, K_{\max})$-valid clash-free survivability across every scenario, Stage-1 $\mathcal{G}_{x_1}$ coupling equality, Stage-2 locked preservation of surviving Stage-1 backups, and exact Stub-Release boundaries). Any violation invalidates and halts aggregation immediately.

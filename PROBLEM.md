@@ -1,6 +1,6 @@
 # Problem Specification: Proactive Dual-Link Failure Restoration in Optical Networks (ToN 2026)
 
-> **Document Purpose:** This document defines the theoretical foundation, physical constraints, mathematical formulations, research objectives, and evaluation metrics for the online dual-link failure restoration problem investigated in the IEEE/ACM *Transactions on Networking* (ToN) submission `Writing/ToN_2026.tex`. It serves as the authoritative theoretical specification of **what** problem is solved, **why** it matters, and **how** network performance is quantified. The algorithmic architecture index is given in `ALGORITHMS.md` with dedicated modular heuristic specifications in `algorithms/`, and the benchmark suite, fairness protocol, and runtime budget analysis are specified in `EXPERIMENTS.md`.
+> **Document Purpose:** This document defines the theoretical foundation, physical constraints, mathematical formulations, research objectives, and evaluation metrics for the online dual-link failure restoration problem investigated in the IEEE/ACM *Transactions on Networking* (ToN) submission `paper/ToN_2026.tex`. It serves as the authoritative theoretical specification of **what** problem is solved, **why** it matters, and **how** network performance is quantified. The algorithmic architecture index is given in `ALGORITHMS.md` with dedicated modular heuristic specifications in `algorithms/`, and the benchmark suite, fairness protocol, and runtime budget analysis are specified in `EXPERIMENTS.md`.
 
 ---
 
@@ -202,8 +202,8 @@ The study targets four principal research questions:
 
 ### 8.1 Benchmark Topologies
 Experiments are evaluated on two standard European transport topologies from SNDlib:
-- **Nobel-EU:** $N = 28$ nodes, $|E| = 41$ physical spans ($M = 82$ directed arcs), $W = 30$ wavelengths per arc.
-- **Germany50:** $N = 50$ nodes, $|E| = 88$ physical spans ($M = 176$ directed arcs), $W = 30$ wavelengths per arc.
+- **Nobel-EU:** $N = 28$ nodes, $|E| = 41$ physical spans ($M = 82$ directed arcs), $W = 32$ wavelengths per arc.
+- **Germany50:** $N = 50$ nodes, $|E| = 88$ physical spans ($M = 176$ directed arcs), $W = 32$ wavelengths per arc.
 - Routing configuration: Geographic fiber distance (Haversine km from SNDlib node coordinates, configurable to hop count), stretch bound $\kappa = 0.10$, polynomial candidate cap $K_{\max} = 10$.
 
 ### 8.2 Symmetric Online Traffic Profiles Across Both Topologies

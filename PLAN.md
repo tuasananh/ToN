@@ -1,6 +1,6 @@
 # Implementation, Verification & Experimental Execution Plan (ToN 2026)
 
-> **Document Purpose:** This document provides the end-to-end engineering, verification, and execution roadmap for implementing the theoretical specifications in `PROBLEM.md`, `ALGORITHMS.md`, and `algorithms/*.md`, and conducting the `1,344`-run experimental campaign defined in `EXPERIMENTS.md` on the target `Intel Core i9-13900HX` laptop. While the specification documents remain purely theoretical, `PLAN.md` defines the concrete C++23 architecture, memory layout, exact zero-bias performance engineering, automated correctness gates, and P-core-pinned execution workflow.
+> **Document Purpose:** This document provides the end-to-end engineering, verification, and execution roadmap for implementing the theoretical specifications in `PROBLEM.md`, `ALGORITHMS.md`, and `algorithms/*.md`, and conducting the `1,704`-run experimental campaign (`EXP-1`, `EXP-2`, and `EXP-3`) defined in `EXPERIMENTS.md` on the target `Intel Core i9-13900HX` laptop. While the specification documents remain purely theoretical, `PLAN.md` defines the concrete C++23 architecture, memory layout, exact zero-bias performance engineering, automated correctness gates, and P-core-pinned execution workflow.
 
 ---
 
@@ -28,18 +28,19 @@
 ToN/
 ├── PROBLEM.md                         # Authoritative problem & metric theory
 ├── ALGORITHMS.md                      # Modular algorithm architecture index
-├── EXPERIMENTS.md                     # Fairness protocol & 2-experiment suite
+├── EXPERIMENTS.md                     # Fairness protocol & 3-experiment suite (EXP-1..3)
 ├── PLAN.md                            # This implementation & execution plan
 ├── algorithms/                        # Pure-theory modular heuristic specs
 │   ├── FAILURE_ORCHESTRATION.md
 │   ├── DSATUR_HEURISTIC.md
 │   ├── GREEDY_BASELINE.md
 │   └── NO_REROUTE_BASELINE.md
+├── paper/                             # Manuscript directory (ToN_2026.tex)
 ├── CMakeLists.txt
 ├── data/
 │   ├── topologies/                    # nobel-eu.xml, germany50.xml
 │   ├── demands/                       # nobel-eu static matrix, germany50 1d1m (28 days)
-│   └── streams/                       # Frozen 28-seed x 1000-req CSVs + SHA-256 manifest
+│   └── streams/                       # Frozen 112 base + 60 permutation CSVs + SHA-256 manifest
 ├── include/ton/
 │   ├── core/
 │   │   ├── types.hpp                  # Strong IDs, WavelengthMask (uint32_t), Lightpath
@@ -76,18 +77,18 @@ ToN/
 
 ## 2. High-Performance C++23 Memory & Data-Structure Architecture
 
-To execute all `1,344` runs (including $30,756$-scenario Germany50 Directional sequential runs of $1,000$ requests) in minutes rather than days, the C++23 engine exploits five **mathematically exact** data-structure designs:
+To execute all `1,704` runs (including $30,756$-scenario Germany50 Directional sequential runs of $1,000$ requests) in minutes rather than days, the C++23 engine exploits five **mathematically exact** data-structure designs:
 
 ### 2.1 Compact L3-Resident State Representation (`~25 MiB` Total Per Worker)
-Because $W = 30 \le 32$, every link's wavelength occupancy is represented as a single 32-bit word (`WavelengthMask = uint32_t`, `VALID_MASK = (1u << 30) - 1u`):
+Because $W = 32$, every link's wavelength occupancy maps 1-to-1 onto an exact 32-bit machine word (`WavelengthMask = uint32_t`, `FULL_MASK = 0xFFFFFFFFu`, with zero unused padding bits or high-bit masking overhead):
 1. **L1-Resident Working State (`< 12 KB`):**
    - `primary_mask[M]`: $176 \times 4\text{ B} = 704\text{ B}$ (`1` CPU cycle per hop clash check).
-   - `primary_owner[M][W]`: $176 \times 30 \times 2\text{ B} = 10.5\text{ KB}$ (`uint16_t` request IDs).
+   - `primary_owner[M][W]`: $176 \times 32 \times 2\text{ B} = 11.3\text{ KB}$ (`uint16_t` request IDs).
 2. **L3-Resident Scenario Bitmasks (`20.65 MiB` at Maximum Scale):**
    - `backup_mask[num_scenarios * M]`: Flat contiguous `uint32_t` buffer wrapped in `std::mdspan`. Even for $30,756$ scenarios $\times 176$ arcs, this buffer is **$20.65\text{ MiB}$**—fitting comfortably inside the i9-13900HX's **$36\text{ MiB}$ L3 cache**.
    - Stage-1 sequential masks (`176 * 176 * 4 B = 124 KB`) reside permanently in L2 cache.
-3. **Sparse Compact Per-Scenario Allocation Lists (`~2.7 MiB` vs. `650 MB` Dense Table):**
-   - Instead of allocating a dense `30,756 x 176 x 30` occupant table (`325–650 MB`), each scenario $f$ stores only its active backup assignments as compact $6$-byte records `(uint16_t req_id, uint16_t path_id, uint8_t wavelength)` ($\sim 15$ disrupted requests/scenario $\times 6\text{ B} \times 30,756 \approx \mathbf{2.7\text{ MiB}}$).
+3. **Sparse Compact Per-Scenario Allocation Lists (`~2.7 MiB` vs. `693 MB` Dense Table):**
+   - Instead of allocating a dense `30,756 x 176 x 32` occupant table (`346–693 MB`), each scenario $f$ stores only its active backup assignments as compact $6$-byte records `(uint16_t req_id, uint16_t path_id, uint8_t wavelength)` ($\sim 15$ disrupted requests/scenario $\times 6\text{ B} \times 30,756 \approx \mathbf{2.7\text{ MiB}}$).
    - Across **all 8 parallel P-core workers combined**, total memory footprint stays under **$250\text{ MiB}$**, eliminating DRAM bandwidth bottlenecks.
 
 ### 2.2 Unordered Degraded-Topology Deduplication & Shared Path Memoization
@@ -96,9 +97,9 @@ Because $W = 30 \le 32$, every link's wavelength occupancy is represented as a s
 
 ### 2.3 $O(1)$ Incremental Reference-Counted Spectral Utilization Tracker
 Recording $U_{\text{prim}}(t), U_{\text{back}}(t), U_{\text{pure}}(t), U_{\text{stub}}(t), U_{\text{total}}(t), \rho_{\text{overhead}}(t)$ **after every request $t \in \{0, \dots, 999\}$** without scanning $30,756$ scenario masks at each step is achieved via a tiny L1-cached reference-count matrix:
-- Maintain `backup_slot_refcount[M][W]` (`176 x 30 x uint16_t = 10.5 KB`): the exact count of failure states (Stage-1 + Stage-2 in Sequential; $\mathcal{F}_{\text{sim}}$ in Simultaneous) currently reserving slot $(\ell, \lambda)$.
+- Maintain `backup_slot_refcount[M][W]` (`176 x 32 x uint16_t = 11.3 KB`): the exact count of failure states (Stage-1 + Stage-2 in Sequential; $\mathcal{F}_{\text{sim}}$ in Simultaneous) currently reserving slot $(\ell, \lambda)$.
 - During atomic commit of an admitted request, decrement `backup_slot_refcount` on replaced backups and increment on newly committed backups. (On a rejected request, network state is unchanged so step $t$ copies step $t-1$ metrics in $O(1)$!)
-- After each request $t$, slot $(\ell, \lambda) \in H_{\text{back}}(t) \iff \text{backup\_slot\_refcount}[\ell][\lambda] > 0$. Scanning all $M \times W \le 5,280$ counters in L1 cache computes all six exact spectral metrics in **$< 0.5\text{ }\mu\text{s}$ per request**.
+- After each request $t$, slot $(\ell, \lambda) \in H_{\text{back}}(t) \iff \text{backup\_slot\_refcount}[\ell][\lambda] > 0$. Scanning all $M \times W \le 5,632$ counters in L1 cache computes all six exact spectral metrics in **$< 0.5\text{ }\mu\text{s}$ per request**.
 
 ### 2.4 Zero-Allocation Scratchpads & Exact Fail-Fast Ordering
 - **Pre-Allocated Solver Scratchpads:** All DSATUR working buffers (`free_mask[u, p]`, $\omega_{\lambda}(u)$, $\Omega(u)$, link-factored contention table $\Psi[\ell][\lambda]$) reside in a reusable per-worker scratchpad with **zero dynamic heap allocations** inside the request loop.
@@ -119,7 +120,8 @@ flowchart LR
 
 ### Phase 1: Dataset Preparation & Frozen Arrival Streams (`scripts/prepare_datasets.py`)
 1. Obtain and validate official SNDlib `nobel-eu` ($28\text{N}, 41\text{E}, 82\text{L}$) and `germany50` ($50\text{N}, 88\text{E}, 176\text{L}$) topologies (verifying geographic node coordinates and Haversine link distances) plus `nobel-eu` static demands and `germany50` `1d1m` ($28$ daily DFN demand matrices).
-2. Pre-generate and freeze on disk all $4 \times 28 = 112$ paired arrival sequences of $T = 1,000$ requests (`Nobel-EU` $\times$ `{SNDlib-Realistic, Uniform}` and `Germany50` $\times$ `{SNDlib-1d1m, Uniform}`) using fixed documented PRNG seeds (`seed = 1..28`), recording a SHA-256 manifest so every run is permanently reproducible.
+2. Pre-generate and freeze on disk all $4 \times 28 = 112$ paired base arrival sequences of $T = 1,000$ requests (`Nobel-EU` $\times$ `{SNDlib-Realistic, Uniform}` and `Germany50` $\times$ `{SNDlib-1d1m, Uniform}`) using fixed documented PRNG seeds (`seed = 1..28`).
+3. Pre-generate and freeze on disk the $2 \times 30 = 60$ `EXP-3` permutation sequences of the canonical Seed/Day-1 Realistic SNDlib $1,000$-request multiset on each topology: $28$ seeded Fisher-Yates uniform random shuffles (`perm_01..perm_28`) plus the $2$ deterministic boundary orders (`perm_shortest_first` sorted ascending by Haversine shortest-path distance $d_G(s, d)$, and `perm_longest_first` sorted descending by $d_G(s, d)$, with ties broken by base index), asserting exact multiset equality across all $30$ permutations and recording a SHA-256 manifest.
 
 ### Phase 2: Core Topology, Scenario Filter & Path Pool (`include/ton/core/`)
 1. Implement symmetric directed graph representation supporting both `DistanceMetric::GeographicKm` (Haversine) and `DistanceMetric::HopCount`.
@@ -141,15 +143,15 @@ flowchart LR
 1. Implement `InvariantAuditor`, an **independent** full-state checker (sharing zero helper logic with `backup_slot_refcount`) that brute-force verifies all 5 System Invariants from `PROBLEM.md` Section 9 and cross-checks that `backup_slot_refcount` matches brute-force set unions $H_{\text{prim}}(t), H_{\text{back}}(t), H_{\text{pure}}(t), H_{\text{stub}}(t)$ bit-for-bit!
 2. Run all $6$ algorithms on $3$ full $1,000$-request seeds across both Span and Directional cuts with `InvariantAuditor` invoked periodically during the stream and at $t = 999$, verifying zero invariant violations and deterministic repeatability.
 
-### Phase 5: Pilot Calibration & Full `1,344`-Run Campaign (`scripts/run_experiments.py`)
-1. **Pilot Benchmark (Seed 1 Only Across All Scales):** Measure actual single-P-core wall-clock times and RAM usage on `Nobel-EU` and `Germany50` (Span & Directional) to confirm empirical runtime matches the `< 15 min`–`1.5 hr` budget before queuing all $28$ seeds.
-2. **Execute `EXP-1` (`672` Runs — Bidirectional Span Cuts) & `EXP-2` (`672` Runs — Directional Arc Cuts):**
-   - Run via the crash-safe checkpointed 8-P-core runner (Section 4 below). Every completed `(experiment, topology, traffic, seed, algorithm)` writes its output atomically (`.tmp` $\to$ `.csv`) with mandatory `InvariantAuditor` sign-off at $t = 999$, allowing instant zero-loss resume if interrupted.
+### Phase 5: Pilot Calibration & Full `1,704`-Run Campaign (`scripts/run_experiments.py`)
+1. **Pilot Benchmark (Seed 1 Only Across All Scales):** Measure actual single-P-core wall-clock times and RAM usage on `Nobel-EU` and `Germany50` (Span & Directional) to confirm empirical runtime matches the `< 16 min`–`1.6 hr` budget before queuing the full suite.
+2. **Execute `EXP-1` (`672` Runs — Bidirectional Span Cuts), `EXP-2` (`672` Runs — Directional Arc Cuts) & `EXP-3` (`360` Runs — Arrival-Order Permutation Sensitivity):**
+   - Run via the crash-safe checkpointed 8-P-core runner (Section 4 below). Every completed `(experiment, topology, traffic, seq_id, algorithm)` writes its output atomically (`.tmp` $\to$ `.csv`) with mandatory `InvariantAuditor` sign-off at $t = 999$, allowing instant zero-loss resume if interrupted.
 
 ### Phase 6: Statistical Analysis & Manuscript Deliverables (`scripts/analyze_results.py`)
-1. Aggregate all $1,344$ validated runs across $S = 28$ paired sequences.
-2. Compute $\text{Mean} \pm \text{SD}$, $95\%$ CIs, paired relative gains, and two-sided paired Wilcoxon signed-rank $p$-values.
-3. Generate publication-ready vector `.pdf` figures and `.tex` summary tables for `Writing/ToN_2026.tex`.
+1. Aggregate all $1,704$ validated runs across $S = 28$ paired sequences (`EXP-1`, `EXP-2`) and $30$ fixed-multiset permutations (`EXP-3`).
+2. Compute $\text{Mean} \pm \text{SD}$, $95\%$ CIs, coefficients of variation ($\text{CV} = \text{SD}/\text{Mean}$), `[Shortest-First, Longest-First]` boundary envelopes, paired relative gains, and two-sided paired Wilcoxon signed-rank $p$-values.
+3. Generate publication-ready vector `.pdf` figures and `.tex` summary tables for `paper/ToN_2026.tex`.
 
 ---
 
@@ -172,14 +174,15 @@ Based on hardware topology inspection of this machine (`lscpu -e`), the 8 physic
 ## 5. Output Schema & Manuscript Deliverables
 
 ### 5.1 Standardized Raw Telemetry Files (`results/`)
-1. **Per-Step Trajectory CSV (`results/raw_steps/<exp>_<topo>_<traffic>_s<seed>_<alg>.csv` — $1,000$ rows per run):**
+1. **Per-Step Trajectory CSV (`results/raw_steps/<exp>_<topo>_<traffic>_<seq_id>_<alg>.csv` — $1,000$ rows per run):**
    - Columns: `t`, `src`, `dst`, `admitted` (`0/1`), `latency_us`, `k_adm`, `h_prim_slots`, `h_back_slots`, `h_pure_slots`, `h_stub_slots`, `u_prim_pct`, `u_back_pct`, `u_pure_pct`, `u_stub_pct`, `u_total_pct`, `overhead_ratio`.
-2. **Master Run Summary CSV (`results/summaries/all_runs_summary.csv` — $1,344$ rows):**
-   - Columns: `exp`, `topology`, `cut_model`, `traffic`, `seed`, `algorithm`, `regime`, `heuristic`, `first_denial_idx`, `total_granted`, `blocking_prob`, `mean_latency_pre_denial_us`, `p95_latency_pre_denial_us`, `mean_latency_full_us`, `mean_latency_rejected_us`, `u_prim_at_denial`, `u_pure_at_denial`, `overhead_at_denial`, `u_prim_final`, `u_pure_final`, `u_stub_final`, `overhead_final`, `invariants_verified` (`true`).
+2. **Master Run Summary CSV (`results/summaries/all_runs_summary.csv` — $1,704$ rows):**
+   - Columns: `exp`, `topology`, `cut_model`, `traffic`, `seq_id` (`s01..s28`, `p01..p28`, `p_short`, `p_long`), `algorithm`, `regime`, `heuristic`, `first_denial_idx`, `total_granted`, `blocking_prob`, `mean_latency_pre_denial_us`, `p95_latency_pre_denial_us`, `mean_latency_full_us`, `mean_latency_rejected_us`, `u_prim_at_denial`, `u_pure_at_denial`, `overhead_at_denial`, `u_prim_final`, `u_pure_final`, `u_stub_final`, `overhead_final`, `invariants_verified` (`true`).
 
-### 5.2 Target Figures & Tables for `Writing/ToN_2026.tex`
+### 5.2 Target Figures & Tables for `paper/ToN_2026.tex`
 1. **Table I (Headline `EXP-1` & `EXP-2` Summary):** $I_{\text{denial}}$, $K_{\text{granted}}$, $\rho_{\text{overhead}}$ (at denial & matched load), and $T_{\text{avg}}$ ($\text{Mean} \pm \text{SD}$ + Wilcoxon $p$-values) across all $6$ algorithms for Span & Directional cuts.
 2. **Figure Set A (Simultaneous vs. Sequential Throughput & First Denial):** Grouped bar/box plots comparing `Sim` vs. `Seq` across `DSATUR`, `Greedy`, and `No-Reroute` on Nobel-EU & Germany50 (SNDlib Realistic vs. Uniform).
 3. **Figure Set B (Step-Indexed & Iso-Throughput Spectral Dynamics):** Evolution of $U_{\text{prim}}(t)$, $U_{\text{pure}}(t)$ (dark protection), $U_{\text{stub}}(t)$ (stub-release reuse), and $\rho_{\text{overhead}}$ plotted both vs. arrival index $t \in [0, 999]$ and vs. matched admitted load $|K_{\text{adm}}|$.
 4. **Figure Set C (Provisioning Latency & Scenario Scalability):** Pre-denial and full-stream decision latency scaling from $804$ scenarios up to $30,756$ scenarios.
+5. **Figure Set D & Table II (`EXP-3` Arrival-Order Permutation Sensitivity):** Distribution ($\text{Mean} \pm \text{SD}$, $\text{CV}$, box/violin spread) of $I_{\text{denial}}$ vs. $K_{\text{granted}}$ across $28$ random permutations overlaid with `Shortest-First` and `Longest-First` boundary markers across all $6$ algorithms.
 

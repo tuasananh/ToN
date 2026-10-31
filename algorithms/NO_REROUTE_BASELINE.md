@@ -14,7 +14,7 @@
 
 ## 1. Purpose & Why This Baseline Is Used
 
-`NoRerouteSimRDF` and `NoRerouteSeqRDF` serve **two essential scientific purposes** in `ToN_2026.tex`:
+`NoRerouteSimRDF` and `NoRerouteSeqRDF` serve **two essential scientific purposes** in `paper/ToN_2026.tex`:
 
 1. **Testing Simultaneous vs. Sequential Dynamics Without Control-Plane Reconfiguration:**
    In legacy or ultra-conservative optical control planes, operators freeze pre-planned restoration tables upon admission so existing backup cross-connect schedules never change when future requests arrive. Evaluating `NoRerouteSimRDF` against `NoRerouteSeqRDF` verifies whether simultaneous-vs.-sequential capacity and overhead laws persist even when dynamic backup rerouting is completely disabled.

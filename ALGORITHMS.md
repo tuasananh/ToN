@@ -1,6 +1,6 @@
 # Algorithmic Architecture & Modular Specification Index (ToN 2026)
 
-> **Document Purpose:** This document serves as the high-level architectural overview and navigation index for all provisioning algorithms evaluated in `Writing/ToN_2026.tex`. To keep each theoretical component concise and self-contained, the shared failure-regime orchestration and each individual conflict-resolution heuristic (together with its first-principles design rationale) are specified in dedicated documents under `algorithms/`. Problem definitions and metrics are specified in `PROBLEM.md`; the focused experimental suite, fairness invariants, and laptop runtime analysis are specified in `EXPERIMENTS.md`.
+> **Document Purpose:** This document serves as the high-level architectural overview and navigation index for all provisioning algorithms evaluated in `paper/ToN_2026.tex`. To keep each theoretical component concise and self-contained, the shared failure-regime orchestration and each individual conflict-resolution heuristic (together with its first-principles design rationale) are specified in dedicated documents under `algorithms/`. Problem definitions and metrics are specified in `PROBLEM.md`; the focused experimental suite, fairness invariants, and laptop runtime analysis are specified in `EXPERIMENTS.md`.
 
 ---
 
