@@ -13,19 +13,19 @@ Prepares and validates:
 
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass
 import hashlib
 import heapq
 import math
 import os
-from pathlib import Path
 import random
 import shutil
 import tarfile
-from typing import Dict, Iterable, List, Sequence, Tuple
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
@@ -41,7 +41,7 @@ NUM_SEEDS: int = 28
 
 SNDLIB_NS = {"s": "http://sndlib.zib.de/network"}
 
-XML_URLS: Dict[str, List[str]] = {
+XML_URLS: dict[str, list[str]] = {
     "nobel-eu.xml": [
         "https://raw.githubusercontent.com/sikorski-as/sndlib/master/xml/nobel-eu/nobel-eu.xml",
         "https://raw.githubusercontent.com/Uriah372-DS/Adjustable-Robust-Optimization-Decomposition-Algorithm/master/sndlib-networks-xml/nobel-eu.xml",
@@ -52,17 +52,24 @@ XML_URLS: Dict[str, List[str]] = {
     ],
 }
 
-NOBEL_NATIVE_URLS: List[str] = [
+NOBEL_NATIVE_URLS: list[str] = [
     "https://raw.githubusercontent.com/sikorski-as/sndlib/master/native/nobel-eu/nobel-eu.txt",
 ]
 
-DEFAULT_LOCAL_NATIVE_ARCHIVES: List[Path] = [
-    Path(os.environ.get("SNDLIB_NATIVE_ARCHIVE", "")) if os.environ.get("SNDLIB_NATIVE_ARCHIVE") else Path(),
-    REPO_ROOT.parent / "dual_link_failure_2026" / "tuasananh" / "sndlib-networks-native.tgz",
+DEFAULT_LOCAL_NATIVE_ARCHIVES: list[Path] = [
+    Path(os.environ.get("SNDLIB_NATIVE_ARCHIVE", ""))
+    if os.environ.get("SNDLIB_NATIVE_ARCHIVE")
+    else Path(),
+    REPO_ROOT.parent
+    / "dual_link_failure_2026"
+    / "tuasananh"
+    / "sndlib-networks-native.tgz",
 ]
 
-DEFAULT_LOCAL_1D1M_ARCHIVES: List[Path] = [
-    Path(os.environ.get("SNDLIB_1D1M_ARCHIVE", "")) if os.environ.get("SNDLIB_1D1M_ARCHIVE") else Path(),
+DEFAULT_LOCAL_1D1M_ARCHIVES: list[Path] = [
+    Path(os.environ.get("SNDLIB_1D1M_ARCHIVE", ""))
+    if os.environ.get("SNDLIB_1D1M_ARCHIVE")
+    else Path(),
     REPO_ROOT.parent
     / "dual_link_failure_2026"
     / "tuasananh"
@@ -90,13 +97,15 @@ class SpanRecord:
 @dataclass(frozen=True)
 class TopologyData:
     name: str
-    nodes: Tuple[NodeRecord, ...]
-    spans: Tuple[SpanRecord, ...]
-    name_to_id: Dict[str, int]
-    xml_demands: Dict[Tuple[int, int], float]
+    nodes: tuple[NodeRecord, ...]
+    spans: tuple[SpanRecord, ...]
+    name_to_id: dict[str, int]
+    xml_demands: dict[tuple[int, int], float]
 
 
-def haversine_km(lon1_deg: float, lat1_deg: float, lon2_deg: float, lat2_deg: float) -> float:
+def haversine_km(
+    lon1_deg: float, lat1_deg: float, lon2_deg: float, lat2_deg: float
+) -> float:
     """Computes symmetric great-circle Haversine distance in kilometers (R = 6371.0 km)."""
     if (lon1_deg, lat1_deg) > (lon2_deg, lat2_deg):
         lon1_deg, lat1_deg, lon2_deg, lat2_deg = lon2_deg, lat2_deg, lon1_deg, lat1_deg
@@ -108,7 +117,9 @@ def haversine_km(lon1_deg: float, lat1_deg: float, lon2_deg: float, lat2_deg: fl
     sin_dphi = math.sin(0.5 * dphi)
     sin_dlam = math.sin(0.5 * dlam)
     a = sin_dphi * sin_dphi + math.cos(phi1) * math.cos(phi2) * (sin_dlam * sin_dlam)
-    return 2.0 * EARTH_RADIUS_KM * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a)))
+    return (
+        2.0 * EARTH_RADIUS_KM * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a)))
+    )
 
 
 def _download_first_available(urls: Sequence[str], dest: Path) -> None:
@@ -116,7 +127,9 @@ def _download_first_available(urls: Sequence[str], dest: Path) -> None:
     last_err: Exception | None = None
     for url in urls:
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "ToN2026-DatasetPrep/1.0"})
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "ToN2026-DatasetPrep/1.0"}
+            )
             with urllib.request.urlopen(req, timeout=20) as resp:
                 payload = resp.read()
             tmp = dest.with_suffix(dest.suffix + ".tmp")
@@ -125,7 +138,9 @@ def _download_first_available(urls: Sequence[str], dest: Path) -> None:
             return
         except Exception as err:  # noqa: BLE001
             last_err = err
-    raise RuntimeError(f"Failed to download {dest.name} from configured mirrors: {last_err}")
+    raise RuntimeError(
+        f"Failed to download {dest.name} from configured mirrors: {last_err}"
+    )
 
 
 def ensure_raw_datasets() -> None:
@@ -145,7 +160,9 @@ def ensure_raw_datasets() -> None:
         for archive in DEFAULT_LOCAL_NATIVE_ARCHIVES:
             if archive and archive.is_file():
                 with tarfile.open(archive, "r:gz") as tf:
-                    matches = [m for m in tf.getmembers() if m.name.endswith("nobel-eu.txt")]
+                    matches = [
+                        m for m in tf.getmembers() if m.name.endswith("nobel-eu.txt")
+                    ]
                     if matches:
                         fobj = tf.extractfile(matches[0])
                         if fobj is not None:
@@ -155,14 +172,20 @@ def ensure_raw_datasets() -> None:
         if not extracted:
             _download_first_available(NOBEL_NATIVE_URLS, nobel_txt)
 
-    existing_1d1m = sorted(GERMANY50_1D1M_DIR.glob("demandMatrix-germany50-DFN-1day-*.txt"))
+    existing_1d1m = sorted(
+        GERMANY50_1D1M_DIR.glob("demandMatrix-germany50-DFN-1day-*.txt")
+    )
     if len(existing_1d1m) != NUM_SEEDS:
         extracted = False
         for archive in DEFAULT_LOCAL_1D1M_ARCHIVES:
             if archive and archive.is_file():
                 with tarfile.open(archive, "r:gz") as tf:
                     members = sorted(
-                        [m for m in tf.getmembers() if m.isfile() and m.name.endswith(".txt")],
+                        [
+                            m
+                            for m in tf.getmembers()
+                            if m.isfile() and m.name.endswith(".txt")
+                        ],
                         key=lambda m: m.name,
                     )
                     if len(members) != NUM_SEEDS:
@@ -172,7 +195,9 @@ def ensure_raw_datasets() -> None:
                     for member in members:
                         fobj = tf.extractfile(member)
                         if fobj is None:
-                            raise RuntimeError(f"Could not extract {member.name} from {archive}")
+                            raise RuntimeError(
+                                f"Could not extract {member.name} from {archive}"
+                            )
                         out_path = GERMANY50_1D1M_DIR / Path(member.name).name
                         out_path.write_bytes(fobj.read())
                     extracted = True
@@ -184,11 +209,13 @@ def ensure_raw_datasets() -> None:
             )
 
 
-def parse_sndlib_xml(xml_path: Path, expected_nodes: int, expected_spans: int) -> TopologyData:
+def parse_sndlib_xml(
+    xml_path: Path, expected_nodes: int, expected_spans: int
+) -> TopologyData:
     """Parses and validates an official SNDlib XML network file."""
     root = ET.parse(xml_path).getroot()
-    nodes_list: List[NodeRecord] = []
-    name_to_id: Dict[str, int] = {}
+    nodes_list: list[NodeRecord] = []
+    name_to_id: dict[str, int] = {}
 
     for node_elem in root.findall(".//s:networkStructure/s:nodes/s:node", SNDLIB_NS):
         name = node_elem.attrib["id"].strip()
@@ -196,8 +223,15 @@ def parse_sndlib_xml(xml_path: Path, expected_nodes: int, expected_spans: int) -
             raise ValueError(f"Invalid or duplicate node id '{name}' in {xml_path}")
         x_elem = node_elem.find("s:coordinates/s:x", SNDLIB_NS)
         y_elem = node_elem.find("s:coordinates/s:y", SNDLIB_NS)
-        if x_elem is None or y_elem is None or x_elem.text is None or y_elem.text is None:
-            raise ValueError(f"Missing geographic coordinates for node '{name}' in {xml_path}")
+        if (
+            x_elem is None
+            or y_elem is None
+            or x_elem.text is None
+            or y_elem.text is None
+        ):
+            raise ValueError(
+                f"Missing geographic coordinates for node '{name}' in {xml_path}"
+            )
         lon_deg = float(x_elem.text)
         lat_deg = float(y_elem.text)
         if not (-180.0 <= lon_deg <= 180.0 and -90.0 <= lat_deg <= 90.0):
@@ -206,7 +240,9 @@ def parse_sndlib_xml(xml_path: Path, expected_nodes: int, expected_spans: int) -
             )
         nid = len(nodes_list)
         name_to_id[name] = nid
-        nodes_list.append(NodeRecord(node_id=nid, name=name, lon_deg=lon_deg, lat_deg=lat_deg))
+        nodes_list.append(
+            NodeRecord(node_id=nid, name=name, lon_deg=lon_deg, lat_deg=lat_deg)
+        )
 
     if len(nodes_list) != expected_nodes:
         raise ValueError(
@@ -218,13 +254,18 @@ def parse_sndlib_xml(xml_path: Path, expected_nodes: int, expected_spans: int) -
     if node_names != sorted(node_names):
         raise ValueError(f"{xml_path.name}: node order is not canonically sorted")
 
-    spans_list: List[SpanRecord] = []
-    seen_spans: set[Tuple[int, int]] = set()
+    spans_list: list[SpanRecord] = []
+    seen_spans: set[tuple[int, int]] = set()
     for link_elem in root.findall(".//s:networkStructure/s:links/s:link", SNDLIB_NS):
         lid = link_elem.attrib["id"].strip()
         src_elem = link_elem.find("s:source", SNDLIB_NS)
         dst_elem = link_elem.find("s:target", SNDLIB_NS)
-        if src_elem is None or dst_elem is None or src_elem.text is None or dst_elem.text is None:
+        if (
+            src_elem is None
+            or dst_elem is None
+            or src_elem.text is None
+            or dst_elem.text is None
+        ):
             raise ValueError(f"Malformed link '{lid}' in {xml_path}")
         u_name = src_elem.text.strip()
         v_name = dst_elem.text.strip()
@@ -245,7 +286,9 @@ def parse_sndlib_xml(xml_path: Path, expected_nodes: int, expected_spans: int) -
             nodes_list[v].lat_deg,
         )
         if not (dist_km > 0.0 and math.isfinite(dist_km)):
-            raise ValueError(f"Non-positive Haversine distance {dist_km} on link '{lid}'")
+            raise ValueError(
+                f"Non-positive Haversine distance {dist_km} on link '{lid}'"
+            )
         spans_list.append(
             SpanRecord(span_id=len(spans_list), name=lid, u=u, v=v, length_km=dist_km)
         )
@@ -255,7 +298,7 @@ def parse_sndlib_xml(xml_path: Path, expected_nodes: int, expected_spans: int) -
             f"{xml_path.name}: expected {expected_spans} physical spans, parsed {len(spans_list)}"
         )
 
-    xml_demands: Dict[Tuple[int, int], float] = {}
+    xml_demands: dict[tuple[int, int], float] = {}
     for dem_elem in root.findall(".//s:demands/s:demand", SNDLIB_NS):
         s_elem = dem_elem.find("s:source", SNDLIB_NS)
         t_elem = dem_elem.find("s:target", SNDLIB_NS)
@@ -286,17 +329,17 @@ def parse_sndlib_xml(xml_path: Path, expected_nodes: int, expected_spans: int) -
 
 
 def parse_sndlib_native_demands(
-    txt_path: Path, name_to_id: Dict[str, int]
-) -> Tuple[List[str], Dict[Tuple[int, int], float]]:
+    txt_path: Path, name_to_id: dict[str, int]
+) -> tuple[list[str], dict[tuple[int, int], float]]:
     """Parses NODES and DEMANDS sections from an SNDlib native format text file."""
     content = txt_path.read_text(encoding="latin-1")
     section: str | None = None
-    parsed_nodes: List[str] = []
-    demands: Dict[Tuple[int, int], float] = {}
+    parsed_nodes: list[str] = []
+    demands: dict[tuple[int, int], float] = {}
 
     for raw_line in content.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or line.startswith("?"):
+        if not line or line.startswith(("#", "?")):
             continue
         if line.startswith("NODES ("):
             section = "NODES"
@@ -328,12 +371,16 @@ def parse_sndlib_native_demands(
                 raise ValueError(f"Malformed DEMANDS tokens in {txt_path}: {line}")
             src_name, dst_name = endpoints[0], endpoints[1]
             if src_name not in name_to_id or dst_name not in name_to_id:
-                raise ValueError(f"Unknown node in {txt_path} demand: ({src_name}, {dst_name})")
+                raise ValueError(
+                    f"Unknown node in {txt_path} demand: ({src_name}, {dst_name})"
+                )
             u = name_to_id[src_name]
             v = name_to_id[dst_name]
             val = float(after_tokens[1])
             if u == v or val < 0.0 or not math.isfinite(val):
-                raise ValueError(f"Invalid demand value in {txt_path}: ({src_name}, {dst_name})={val}")
+                raise ValueError(
+                    f"Invalid demand value in {txt_path}: ({src_name}, {dst_name})={val}"
+                )
             demands[(u, v)] = val
 
     if parsed_nodes and parsed_nodes != [
@@ -344,20 +391,20 @@ def parse_sndlib_native_demands(
     return parsed_nodes, demands
 
 
-def compute_all_pairs_shortest_km(topo: TopologyData) -> Dict[Tuple[int, int], float]:
+def compute_all_pairs_shortest_km(topo: TopologyData) -> dict[tuple[int, int], float]:
     """Computes exact symmetric all-pairs shortest-path Haversine distance d_G(s, d) in km."""
     num_nodes = len(topo.nodes)
-    adj: List[List[Tuple[int, float]]] = [[] for _ in range(num_nodes)]
+    adj: list[list[tuple[int, float]]] = [[] for _ in range(num_nodes)]
     for span in topo.spans:
         adj[span.u].append((span.v, span.length_km))
         adj[span.v].append((span.u, span.length_km))
     for u in range(num_nodes):
         adj[u].sort(key=lambda pair: pair[0])
 
-    raw_dist: List[List[float]] = [[math.inf] * num_nodes for _ in range(num_nodes)]
+    raw_dist: list[list[float]] = [[math.inf] * num_nodes for _ in range(num_nodes)]
     for src in range(num_nodes):
         raw_dist[src][src] = 0.0
-        pq: List[Tuple[float, int]] = [(0.0, src)]
+        pq: list[tuple[float, int]] = [(0.0, src)]
         while pq:
             d_u, u = heapq.heappop(pq)
             if d_u > raw_dist[src][u]:
@@ -368,13 +415,15 @@ def compute_all_pairs_shortest_km(topo: TopologyData) -> Dict[Tuple[int, int], f
                     raw_dist[src][v] = cand
                     heapq.heappush(pq, (cand, v))
 
-    sym_dist: Dict[Tuple[int, int], float] = {}
+    sym_dist: dict[tuple[int, int], float] = {}
     for u in range(num_nodes):
         for v in range(num_nodes):
             if u == v:
                 continue
             if not math.isfinite(raw_dist[u][v]):
-                raise ValueError(f"Topology {topo.name} is not strongly connected: ({u}, {v})")
+                raise ValueError(
+                    f"Topology {topo.name} is not strongly connected: ({u}, {v})"
+                )
             if abs(raw_dist[u][v] - raw_dist[v][u]) > 1e-9:
                 raise ValueError(
                     f"Asymmetric shortest path in {topo.name}: d({u},{v})={raw_dist[u][v]} vs "
@@ -386,8 +435,8 @@ def compute_all_pairs_shortest_km(topo: TopologyData) -> Dict[Tuple[int, int], f
 
 
 def build_nobel_symmetric_demands(
-    raw_demands: Dict[Tuple[int, int], float], num_nodes: int
-) -> Dict[Tuple[int, int], float]:
+    raw_demands: dict[tuple[int, int], float], num_nodes: int
+) -> dict[tuple[int, int], float]:
     """Transforms Nobel-EU's 378 undirected city-pair demands into 756 symmetric directed demands."""
     expected_undirected = num_nodes * (num_nodes - 1) // 2
     if len(raw_demands) != expected_undirected:
@@ -395,18 +444,22 @@ def build_nobel_symmetric_demands(
             f"Expected {expected_undirected} undirected city-pair demands in Nobel-EU, "
             f"got {len(raw_demands)}"
         )
-    directed: Dict[Tuple[int, int], float] = {}
+    directed: dict[tuple[int, int], float] = {}
     for (u, v), val in raw_demands.items():
         if (v, u) in raw_demands:
-            raise ValueError(f"Unexpected reverse pair ({v}, {u}) in undirected Nobel-EU demands")
+            raise ValueError(
+                f"Unexpected reverse pair ({v}, {u}) in undirected Nobel-EU demands"
+            )
         directed[(u, v)] = val
         directed[(v, u)] = val
     return directed
 
 
-def sample_uniform_stream(num_nodes: int, length: int, seed: int) -> List[Tuple[int, int]]:
+def sample_uniform_stream(
+    num_nodes: int, length: int, seed: int
+) -> list[tuple[int, int]]:
     """Samples T=(src, dst) requests uniformly over ordered node pairs using MT19937(seed)."""
-    pairs: List[Tuple[int, int]] = [
+    pairs: list[tuple[int, int]] = [
         (u, v) for u in range(num_nodes) for v in range(num_nodes) if u != v
     ]
     rng = random.Random(seed)
@@ -414,8 +467,8 @@ def sample_uniform_stream(num_nodes: int, length: int, seed: int) -> List[Tuple[
 
 
 def sample_weighted_stream(
-    directed_demands: Dict[Tuple[int, int], float], length: int, seed: int
-) -> List[Tuple[int, int]]:
+    directed_demands: dict[tuple[int, int], float], length: int, seed: int
+) -> list[tuple[int, int]]:
     """Samples T=(src, dst) requests proportional to D(s, d) using MT19937(seed)."""
     sorted_items = sorted(
         ((pair, val) for pair, val in directed_demands.items() if val > 0.0),
@@ -430,12 +483,12 @@ def sample_weighted_stream(
 
 
 def generate_exp3_permutations(
-    base_stream: Sequence[Tuple[int, int]],
-    shortest_km: Dict[Tuple[int, int], float],
-) -> Dict[str, List[Tuple[int, int]]]:
+    base_stream: Sequence[tuple[int, int]],
+    shortest_km: dict[tuple[int, int], float],
+) -> dict[str, list[tuple[int, int]]]:
     """Generates 28 seeded Fisher-Yates shuffles + 2 deterministic boundary permutations."""
     base_counter = Counter(base_stream)
-    perms: Dict[str, List[Tuple[int, int]]] = {}
+    perms: dict[str, list[tuple[int, int]]] = {}
 
     for p_idx in range(1, NUM_SEEDS + 1):
         rng = random.Random(p_idx)
@@ -465,13 +518,15 @@ def generate_exp3_permutations(
 
     for label, seq in perms.items():
         if len(seq) != len(base_stream) or Counter(seq) != base_counter:
-            raise AssertionError(f"Multiset mismatch detected in EXP-3 permutation '{label}'")
+            raise AssertionError(
+                f"Multiset mismatch detected in EXP-3 permutation '{label}'"
+            )
 
     return perms
 
 
 def write_stream_csv(
-    csv_path: Path, requests: Sequence[Tuple[int, int]], nodes: Sequence[NodeRecord]
+    csv_path: Path, requests: Sequence[tuple[int, int]], nodes: Sequence[NodeRecord]
 ) -> None:
     """Atomically writes a 1,000-request arrival stream CSV with Unix LF endings."""
     csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -491,17 +546,21 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_and_verify_manifest(streams_dir: Path) -> List[Tuple[str, str]]:
+def write_and_verify_manifest(streams_dir: Path) -> list[tuple[str, str]]:
     """Writes GNU sha256sum-compatible manifest.sha256 and verifies all stream digests."""
     csv_files = sorted(
-        p.relative_to(streams_dir).as_posix() for p in streams_dir.rglob("*.csv") if p.is_file()
+        p.relative_to(streams_dir).as_posix()
+        for p in streams_dir.rglob("*.csv")
+        if p.is_file()
     )
     expected_total = 4 * NUM_SEEDS + 2 * (NUM_SEEDS + 2)
     if len(csv_files) != expected_total:
-        raise RuntimeError(f"Expected {expected_total} stream CSVs, found {len(csv_files)}")
+        raise RuntimeError(
+            f"Expected {expected_total} stream CSVs, found {len(csv_files)}"
+        )
 
-    entries: List[Tuple[str, str]] = []
-    manifest_lines: List[str] = []
+    entries: list[tuple[str, str]] = []
+    manifest_lines: list[str] = []
     for rel_posix in csv_files:
         digest = sha256_file(streams_dir / rel_posix)
         entries.append((digest, rel_posix))
@@ -526,7 +585,9 @@ def prepare_all() -> None:
     """Executes full Phase 1 dataset ingestion, validation, stream freezing, and manifest sign-off."""
     ensure_raw_datasets()
 
-    nobel = parse_sndlib_xml(TOPOLOGIES_DIR / "nobel-eu.xml", expected_nodes=28, expected_spans=41)
+    nobel = parse_sndlib_xml(
+        TOPOLOGIES_DIR / "nobel-eu.xml", expected_nodes=28, expected_spans=41
+    )
     germany = parse_sndlib_xml(
         TOPOLOGIES_DIR / "germany50.xml", expected_nodes=50, expected_spans=88
     )
@@ -536,17 +597,25 @@ def prepare_all() -> None:
     )
     if nobel_txt_demands != nobel.xml_demands:
         raise ValueError("Nobel-EU native demands do not match Nobel-EU XML demands")
-    nobel_directed_demands = build_nobel_symmetric_demands(nobel_txt_demands, len(nobel.nodes))
+    nobel_directed_demands = build_nobel_symmetric_demands(
+        nobel_txt_demands, len(nobel.nodes)
+    )
 
-    daily_files = sorted(GERMANY50_1D1M_DIR.glob("demandMatrix-germany50-DFN-1day-*.txt"))
+    daily_files = sorted(
+        GERMANY50_1D1M_DIR.glob("demandMatrix-germany50-DFN-1day-*.txt")
+    )
     if len(daily_files) != NUM_SEEDS:
-        raise ValueError(f"Expected {NUM_SEEDS} Germany50 1d1m files, found {len(daily_files)}")
+        raise ValueError(
+            f"Expected {NUM_SEEDS} Germany50 1d1m files, found {len(daily_files)}"
+        )
 
-    germany_daily_demands: List[Dict[Tuple[int, int], float]] = []
+    germany_daily_demands: list[dict[tuple[int, int], float]] = []
     for day_idx, day_file in enumerate(daily_files, start=1):
         expected_suffix = f"200502{day_idx:02d}.txt"
         if not day_file.name.endswith(expected_suffix):
-            raise ValueError(f"Unexpected 1d1m filename order at day {day_idx}: {day_file.name}")
+            raise ValueError(
+                f"Unexpected 1d1m filename order at day {day_idx}: {day_file.name}"
+            )
         _, day_demands = parse_sndlib_native_demands(day_file, germany.name_to_id)
         if sum(day_demands.values()) <= 0.0:
             raise ValueError(f"Non-positive total demand volume in {day_file.name}")
@@ -558,32 +627,44 @@ def prepare_all() -> None:
     STREAMS_DIR.mkdir(parents=True, exist_ok=True)
     EXP3_PERMS_DIR.mkdir(parents=True, exist_ok=True)
 
-    nobel_seed1_realistic: List[Tuple[int, int]] = []
-    germany_seed1_realistic: List[Tuple[int, int]] = []
+    nobel_seed1_realistic: list[tuple[int, int]] = []
+    germany_seed1_realistic: list[tuple[int, int]] = []
 
     for seed in range(1, NUM_SEEDS + 1):
-        nobel_real = sample_weighted_stream(nobel_directed_demands, STREAM_LENGTH, seed=seed)
+        nobel_real = sample_weighted_stream(
+            nobel_directed_demands, STREAM_LENGTH, seed=seed
+        )
         nobel_unif = sample_uniform_stream(len(nobel.nodes), STREAM_LENGTH, seed=seed)
         germany_real = sample_weighted_stream(
             germany_daily_demands[seed - 1], STREAM_LENGTH, seed=seed
         )
-        germany_unif = sample_uniform_stream(len(germany.nodes), STREAM_LENGTH, seed=seed)
+        germany_unif = sample_uniform_stream(
+            len(germany.nodes), STREAM_LENGTH, seed=seed
+        )
 
         if seed == 1:
             nobel_seed1_realistic = nobel_real
             germany_seed1_realistic = germany_real
 
         write_stream_csv(
-            STREAMS_DIR / f"nobel_eu_realistic_seed_{seed:02d}.csv", nobel_real, nobel.nodes
+            STREAMS_DIR / f"nobel_eu_realistic_seed_{seed:02d}.csv",
+            nobel_real,
+            nobel.nodes,
         )
         write_stream_csv(
-            STREAMS_DIR / f"nobel_eu_uniform_seed_{seed:02d}.csv", nobel_unif, nobel.nodes
+            STREAMS_DIR / f"nobel_eu_uniform_seed_{seed:02d}.csv",
+            nobel_unif,
+            nobel.nodes,
         )
         write_stream_csv(
-            STREAMS_DIR / f"germany50_1d1m_seed_{seed:02d}.csv", germany_real, germany.nodes
+            STREAMS_DIR / f"germany50_1d1m_seed_{seed:02d}.csv",
+            germany_real,
+            germany.nodes,
         )
         write_stream_csv(
-            STREAMS_DIR / f"germany50_uniform_seed_{seed:02d}.csv", germany_unif, germany.nodes
+            STREAMS_DIR / f"germany50_uniform_seed_{seed:02d}.csv",
+            germany_unif,
+            germany.nodes,
         )
 
     nobel_shortest_km = compute_all_pairs_shortest_km(nobel)
@@ -593,7 +674,9 @@ def prepare_all() -> None:
     for label, seq in nobel_perms.items():
         write_stream_csv(EXP3_PERMS_DIR / f"nobel_eu_{label}.csv", seq, nobel.nodes)
 
-    germany_perms = generate_exp3_permutations(germany_seed1_realistic, germany_shortest_km)
+    germany_perms = generate_exp3_permutations(
+        germany_seed1_realistic, germany_shortest_km
+    )
     for label, seq in germany_perms.items():
         write_stream_csv(EXP3_PERMS_DIR / f"germany50_{label}.csv", seq, germany.nodes)
 

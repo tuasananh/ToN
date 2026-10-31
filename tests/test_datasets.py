@@ -3,25 +3,27 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import csv
-from pathlib import Path
 import random
 import subprocess
 import sys
 import unittest
+from collections import Counter
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import prepare_datasets as prep  # noqa: E402
+import prepare_datasets as prep
 
 
 def read_stream(csv_path: Path) -> list[tuple[int, int, int, str, str]]:
     with csv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames != ["t", "src", "dst", "src_name", "dst_name"]:
-            raise AssertionError(f"Unexpected CSV header in {csv_path}: {reader.fieldnames}")
+            raise AssertionError(
+                f"Unexpected CSV header in {csv_path}: {reader.fieldnames}"
+            )
         rows = [
             (
                 int(r["t"]),
@@ -57,7 +59,9 @@ class Phase1DatasetGateTest(unittest.TestCase):
         self.assertEqual(len(nobel_dem), 28 * 27 // 2)
         self.assertEqual(nobel_dem, nobel.xml_demands)
 
-        daily_files = sorted(prep.GERMANY50_1D1M_DIR.glob("demandMatrix-germany50-DFN-1day-*.txt"))
+        daily_files = sorted(
+            prep.GERMANY50_1D1M_DIR.glob("demandMatrix-germany50-DFN-1day-*.txt")
+        )
         self.assertEqual(len(daily_files), 28)
         for day_file in daily_files:
             _, day_dem = prep.parse_sndlib_native_demands(day_file, germany.name_to_id)
@@ -96,12 +100,14 @@ class Phase1DatasetGateTest(unittest.TestCase):
         # Verify exact MT19937 uniform reproducibility and bidirectional Nobel-EU realistic flow.
         expected_unif_s1 = prep.sample_uniform_stream(28, 1000, seed=1)
         actual_unif_s1 = [
-            (r[1], r[2]) for r in read_stream(prep.STREAMS_DIR / "nobel_eu_uniform_seed_01.csv")
+            (r[1], r[2])
+            for r in read_stream(prep.STREAMS_DIR / "nobel_eu_uniform_seed_01.csv")
         ]
         self.assertEqual(actual_unif_s1, expected_unif_s1)
 
         nobel_real_s1 = [
-            (r[1], r[2]) for r in read_stream(prep.STREAMS_DIR / "nobel_eu_realistic_seed_01.csv")
+            (r[1], r[2])
+            for r in read_stream(prep.STREAMS_DIR / "nobel_eu_realistic_seed_01.csv")
         ]
         forward_dir = sum(1 for u, v in nobel_real_s1 if u < v)
         reverse_dir = sum(1 for u, v in nobel_real_s1 if u > v)
@@ -122,7 +128,9 @@ class Phase1DatasetGateTest(unittest.TestCase):
         ]
 
         for prefix, base_csv, topo in configs:
-            base_pairs = [(r[1], r[2]) for r in read_stream(prep.STREAMS_DIR / base_csv)]
+            base_pairs = [
+                (r[1], r[2]) for r in read_stream(prep.STREAMS_DIR / base_csv)
+            ]
             base_multiset = Counter(base_pairs)
             shortest_km = prep.compute_all_pairs_shortest_km(topo)
 
@@ -134,7 +142,9 @@ class Phase1DatasetGateTest(unittest.TestCase):
 
             for idx, label in enumerate(perm_labels, start=1):
                 perm_path = prep.EXP3_PERMS_DIR / f"{prefix}_{label}.csv"
-                self.assertTrue(perm_path.is_file(), f"Missing EXP-3 permutation: {perm_path}")
+                self.assertTrue(
+                    perm_path.is_file(), f"Missing EXP-3 permutation: {perm_path}"
+                )
                 rows = read_stream(perm_path)
                 self.assertEqual(len(rows), 1000)
                 perm_pairs = [(r[1], r[2]) for r in rows]
@@ -152,14 +162,18 @@ class Phase1DatasetGateTest(unittest.TestCase):
 
             short_pairs = [
                 (r[1], r[2])
-                for r in read_stream(prep.EXP3_PERMS_DIR / f"{prefix}_perm_shortest_first.csv")
+                for r in read_stream(
+                    prep.EXP3_PERMS_DIR / f"{prefix}_perm_shortest_first.csv"
+                )
             ]
             short_dists = [shortest_km[p] for p in short_pairs]
             self.assertEqual(short_dists, sorted(short_dists))
 
             long_pairs = [
                 (r[1], r[2])
-                for r in read_stream(prep.EXP3_PERMS_DIR / f"{prefix}_perm_longest_first.csv")
+                for r in read_stream(
+                    prep.EXP3_PERMS_DIR / f"{prefix}_perm_longest_first.csv"
+                )
             ]
             long_dists = [shortest_km[p] for p in long_pairs]
             self.assertEqual(long_dists, sorted(long_dists, reverse=True))

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import sys
 import json
 import os
 import subprocess
+import sys
 
 
 def main():
@@ -14,15 +14,18 @@ def main():
             args = tool_call.get("args", {})
             file_path = args.get("Path", "")
 
-            if file_path and file_path.endswith((".cpp", ".hpp", ".h", ".cc", ".cxx")):
-                if os.path.isfile(file_path):
-                    subprocess.run(
-                        ["/usr/bin/clang-format", "-i", file_path],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                    )
-    except Exception:
+            if (
+                file_path
+                and file_path.endswith((".cpp", ".hpp", ".h", ".cc", ".cxx"))
+                and os.path.isfile(file_path)
+            ):
+                subprocess.run(
+                    ["/usr/bin/clang-format", "-i", file_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+    except Exception:  # noqa: BLE001, S110
         pass
     finally:
         # Hooks require a valid JSON object on stdout
