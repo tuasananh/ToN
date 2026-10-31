@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <span>
 
+#include "ton/core/assert.hpp"
+
 namespace ton {
 
 // Link spectral capacity: W = 32 orthogonal wavelengths mapped 1-to-1 onto
@@ -117,6 +119,8 @@ struct CutArcs {
         return;
       }
     }
+    TON_BOUNDS_CHECK(count < arcs.size(),
+                     "CutArcs capacity exceeded (> 4 severed arcs)");
     arcs[count++] = arc;
     // Maintain canonical ascending ArcId order for O(1) topological key
     // equality.

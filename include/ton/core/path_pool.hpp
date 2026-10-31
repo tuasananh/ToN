@@ -58,6 +58,7 @@ struct PathSlice {
   [[nodiscard]] constexpr bool empty() const noexcept { return count == 0; }
   [[nodiscard]] constexpr uint16_t size() const noexcept { return count; }
   [[nodiscard]] constexpr PathId operator[](size_t idx) const noexcept {
+    TON_BOUNDS_CHECK(idx < count, "PathSlice::operator[] index out of bounds");
     return static_cast<PathId>(first + idx);
   }
   [[nodiscard]] constexpr Iterator begin() const noexcept {
@@ -139,21 +140,31 @@ class PathPool {
                                NodeId dst) const noexcept;
 
   [[nodiscard]] const PathMeta& path_meta(PathId pid) const noexcept {
+    TON_BOUNDS_CHECK(pid < paths_.size(),
+                     "PathPool::path_meta PathId out of bounds");
     return paths_[pid];
   }
   [[nodiscard]] double path_cost(PathId pid) const noexcept {
+    TON_BOUNDS_CHECK(pid < paths_.size(),
+                     "PathPool::path_cost PathId out of bounds");
     return paths_[pid].cost;
   }
   [[nodiscard]] uint16_t path_hops(PathId pid) const noexcept {
+    TON_BOUNDS_CHECK(pid < paths_.size(),
+                     "PathPool::path_hops PathId out of bounds");
     return paths_[pid].num_arcs;
   }
 
   [[nodiscard]] std::span<const ArcId> path_arcs(PathId pid) const noexcept {
+    TON_BOUNDS_CHECK(pid < paths_.size(),
+                     "PathPool::path_arcs PathId out of bounds");
     const auto& m = paths_[pid];
     return std::span<const ArcId>(arc_pool_.data() + m.arc_offset, m.num_arcs);
   }
 
   [[nodiscard]] std::span<const NodeId> path_nodes(PathId pid) const noexcept {
+    TON_BOUNDS_CHECK(pid < paths_.size(),
+                     "PathPool::path_nodes PathId out of bounds");
     const auto& m = paths_[pid];
     return std::span<const NodeId>(node_pool_.data() + m.node_offset,
                                    static_cast<size_t>(m.num_arcs) + 1);

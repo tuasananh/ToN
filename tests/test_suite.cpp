@@ -44,6 +44,10 @@ namespace {
   } while (false)
 
 void test_core_types_and_bitmasks() {
+  TON_BOUNDS_CHECK(true, "sanity bounds check");
+  TON_ASSERT(true, "sanity assertion");
+  TON_ASSUME(true);
+
   static_assert(sizeof(ton::WavelengthMask) == 4);
   static_assert(ton::NUM_WAVELENGTHS == 32);
   static_assert(ton::count_wavelengths(ton::FULL_MASK) == 32);

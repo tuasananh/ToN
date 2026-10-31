@@ -78,12 +78,17 @@ class Graph {
   }
 
   [[nodiscard]] const NodeInfo& node(NodeId id) const noexcept {
+    TON_BOUNDS_CHECK(id < nodes_.size(), "Graph::node NodeId out of bounds");
     return nodes_[id];
   }
   [[nodiscard]] const Span& span(SpanId id) const noexcept {
+    TON_BOUNDS_CHECK(id < spans_.size(), "Graph::span SpanId out of bounds");
     return spans_[id];
   }
-  [[nodiscard]] const Arc& arc(ArcId id) const noexcept { return arcs_[id]; }
+  [[nodiscard]] const Arc& arc(ArcId id) const noexcept {
+    TON_BOUNDS_CHECK(id < arcs_.size(), "Graph::arc ArcId out of bounds");
+    return arcs_[id];
+  }
 
   [[nodiscard]] std::span<const NodeInfo> nodes() const noexcept {
     return nodes_;
@@ -94,12 +99,14 @@ class Graph {
   // Outgoing arcs from node u, deterministically sorted by ascending target
   // NodeId.
   [[nodiscard]] std::span<const ArcId> out_arcs(NodeId u) const noexcept {
+    TON_BOUNDS_CHECK(u < nodes_.size(), "Graph::out_arcs NodeId out of bounds");
     const uint32_t begin = adj_offsets_[u];
     const uint32_t end = adj_offsets_[static_cast<size_t>(u) + 1];
     return std::span<const ArcId>(adj_arcs_.data() + begin, end - begin);
   }
 
   [[nodiscard]] double arc_cost(ArcId a, DistanceMetric metric) const noexcept {
+    TON_BOUNDS_CHECK(a < arcs_.size(), "Graph::arc_cost ArcId out of bounds");
     return metric == DistanceMetric::GeographicKm ? arcs_[a].length_km : 1.0;
   }
 

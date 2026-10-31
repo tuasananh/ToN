@@ -67,10 +67,14 @@ class ScenarioSet {
   }
 
   [[nodiscard]] const SimScenario& sim_scenario(ScenarioId id) const noexcept {
+    TON_BOUNDS_CHECK(id < sim_scenarios_.size(),
+                     "ScenarioSet::sim_scenario ScenarioId out of bounds");
     return sim_scenarios_[id];
   }
 
   [[nodiscard]] const SeqScenario& seq_scenario(ScenarioId id) const noexcept {
+    TON_BOUNDS_CHECK(id < seq_scenarios_.size(),
+                     "ScenarioSet::seq_scenario ScenarioId out of bounds");
     return seq_scenarios_[id];
   }
 
@@ -83,6 +87,8 @@ class ScenarioSet {
   // in memory.
   [[nodiscard]] std::span<const SeqScenario> seq_group(
       FailureUnitId x1) const noexcept {
+    TON_BOUNDS_CHECK(x1 < seq_group_ranges_.size(),
+                     "ScenarioSet::seq_group FailureUnitId out of bounds");
     const auto [offset, len] = seq_group_ranges_[x1];
     return std::span<const SeqScenario>(seq_scenarios_.data() + offset, len);
   }
@@ -91,6 +97,9 @@ class ScenarioSet {
   // directed arc `a`.
   [[nodiscard]] std::span<const ScenarioId> sim_scenarios_cutting_arc(
       ArcId a) const noexcept {
+    TON_BOUNDS_CHECK(
+        static_cast<size_t>(a) + 1 < arc_sim_offsets_.size(),
+        "ScenarioSet::sim_scenarios_cutting_arc ArcId out of bounds");
     const uint32_t begin = arc_sim_offsets_[a];
     const uint32_t end = arc_sim_offsets_[static_cast<size_t>(a) + 1];
     return std::span<const ScenarioId>(arc_sim_ids_.data() + begin,
@@ -101,6 +110,9 @@ class ScenarioSet {
   // contains `a`.
   [[nodiscard]] std::span<const ScenarioId> seq_scenarios_stage2_cutting_arc(
       ArcId a) const noexcept {
+    TON_BOUNDS_CHECK(
+        static_cast<size_t>(a) + 1 < arc_seq_s2_offsets_.size(),
+        "ScenarioSet::seq_scenarios_stage2_cutting_arc ArcId out of bounds");
     const uint32_t begin = arc_seq_s2_offsets_[a];
     const uint32_t end = arc_seq_s2_offsets_[static_cast<size_t>(a) + 1];
     return std::span<const ScenarioId>(arc_seq_s2_ids_.data() + begin,

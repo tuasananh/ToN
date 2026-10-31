@@ -23,6 +23,7 @@ target_compile_options(
         -Wpedantic
         -Werror
         $<$<CONFIG:Release>:-O3;-march=native;-flto;-DNDEBUG>
+        $<$<NOT:$<CONFIG:Release>>:-D_GLIBCXX_ASSERTIONS;-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST>
 )
 target_link_options(
     ton_compile_options
