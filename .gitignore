@@ -1,3 +1,7 @@
 Restoration
 *.png
 paper/Figures/new_experiments/*
+.venv/
+build/
+compile_commands.json
+.cache/

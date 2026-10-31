@@ -1,0 +1,17 @@
+{
+  "cpp-auto-format": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/auto_format.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
