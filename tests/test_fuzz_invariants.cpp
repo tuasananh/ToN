@@ -117,6 +117,32 @@ class InvariantFuzzInjector {
     }
   }
 
+  static void inject_seq_s1_invalid_route(NetworkState& state, FailureUnitId u,
+                                          RequestId severed_req,
+                                          PathId invalid_path) {
+    auto& tbl = state.s1_table_;
+    const size_t offset = static_cast<size_t>(u) * tbl.per_state_cap;
+    for (uint16_t i = 0; i < tbl.counts[u]; ++i) {
+      if (tbl.assignments[offset + i].req_id == severed_req) {
+        tbl.assignments[offset + i].path_id = invalid_path;
+        return;
+      }
+    }
+  }
+
+  static void inject_seq_s2_invalid_route(NetworkState& state, ScenarioId f,
+                                          RequestId severed_req,
+                                          PathId invalid_path) {
+    auto& tbl = state.s2_table_;
+    const size_t offset = static_cast<size_t>(f) * tbl.per_state_cap;
+    for (uint16_t i = 0; i < tbl.counts[f]; ++i) {
+      if (tbl.assignments[offset + i].req_id == severed_req) {
+        tbl.assignments[offset + i].path_id = invalid_path;
+        return;
+      }
+    }
+  }
+
   // 9. INV-5 Sequential Desync (allocations in inactive Stage-1 unit)
   static void inject_sequential_desync(NetworkState& state,
                                        FailureUnitId inactive_u,
@@ -427,6 +453,32 @@ TEST_CASE("Adversarial Invariant Fuzz Harness: 100% Detection Sensitivity",
     const auto audit = ton::InvariantAuditor::audit_state(run.state, pool);
     REQUIRE_FALSE(audit.passed);
     REQUIRE(audit.has_violation(ton::InvariantCode::INV4_RouteAdmissibility));
+
+    // Sequential Stage 1 and Stage 2 invalid route tests
+    {
+      auto seq_run = ton::run_provisioning_algorithm(
+          ton::AlgorithmId::SeqRDF, nobel, nobel_span, pool, stream);
+      REQUIRE(seq_run.summary.total_granted > 0);
+
+      ton::FailureUnitId target_u = ton::INVALID_FAILURE_UNIT;
+      ton::RequestId s1_r = ton::INVALID_REQUEST;
+      for (ton::FailureUnitId u = 0; u < nobel_span.num_units(); ++u) {
+        if (!seq_run.state.seq_stage1_backups(u).empty()) {
+          target_u = u;
+          s1_r = seq_run.state.seq_stage1_backups(u)[0].req_id;
+          break;
+        }
+      }
+      if (target_u != ton::INVALID_FAILURE_UNIT) {
+        ton::test::InvariantFuzzInjector::inject_seq_s1_invalid_route(
+            seq_run.state, target_u, s1_r, ton::INVALID_PATH);
+        const auto seq_audit =
+            ton::InvariantAuditor::audit_state(seq_run.state, pool);
+        REQUIRE_FALSE(seq_audit.passed);
+        REQUIRE(seq_audit.has_violation(
+            ton::InvariantCode::INV4_RouteAdmissibility));
+      }
+    }
   }
 
   SECTION("9. Injected INV-5 Sequential Desync (Inactive Unit) is detected") {

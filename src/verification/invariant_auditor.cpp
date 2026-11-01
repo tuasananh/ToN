@@ -316,6 +316,9 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
           record_violation(InvariantCode::INV4_RouteAdmissibility, ba.req_id,
                            INVALID_ARC, ba.wavelength, sc.id, StateDomain::Sim,
                            "Backup route invalid: " + path_err);
+          if (ba.path_id >= pool.num_paths()) {
+            continue;
+          }
         } else {
           // INV-4: Severed arc traversal
           if (pool.path_intersects(ba.path_id, sc.cut_arcs)) {
@@ -495,6 +498,9 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
                            INVALID_ARC, ba.wavelength, x1,
                            StateDomain::SeqStage1,
                            "Stage-1 backup route invalid: " + path_err);
+          if (ba.path_id >= pool.num_paths()) {
+            continue;
+          }
         } else {
           if (pool.path_intersects(ba.path_id, s1_cut)) {
             record_violation(InvariantCode::INV4_CutArcTraversed, ba.req_id,
@@ -674,6 +680,9 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
                            INVALID_ARC, ba.wavelength, sc.id,
                            StateDomain::SeqStage2,
                            "Stage-2 backup route invalid: " + path_err);
+          if (ba.path_id >= pool.num_paths()) {
+            continue;
+          }
         } else {
           if (pool.path_intersects(ba.path_id, sc.total_cut)) {
             record_violation(
