@@ -152,6 +152,21 @@ class InvariantFuzzInjector {
     tbl.assignments[offset + tbl.counts[inactive_u]++] = ba;
   }
 
+  static void inject_missing_stage1_backup(NetworkState& state, FailureUnitId u,
+                                           RequestId severed_req) {
+    auto& tbl = state.s1_table_;
+    const size_t offset = static_cast<size_t>(u) * tbl.per_state_cap;
+    for (uint16_t i = 0; i < tbl.counts[u]; ++i) {
+      if (tbl.assignments[offset + i].req_id == severed_req) {
+        for (uint16_t j = i + 1; j < tbl.counts[u]; ++j) {
+          tbl.assignments[offset + j - 1] = tbl.assignments[offset + j];
+        }
+        --tbl.counts[u];
+        return;
+      }
+    }
+  }
+
   // 10. INV-5 Broken Sequential Lock
   static void inject_broken_sequential_lock(NetworkState& state, ScenarioId f,
                                             RequestId r, uint8_t altered_w) {
@@ -481,29 +496,86 @@ TEST_CASE("Adversarial Invariant Fuzz Harness: 100% Detection Sensitivity",
     }
   }
 
-  SECTION("9. Injected INV-5 Sequential Desync (Inactive Unit) is detected") {
-    auto run = ton::run_provisioning_algorithm(ton::AlgorithmId::SeqRDF, nobel,
-                                               nobel_span, pool, stream);
-    REQUIRE(run.summary.total_granted > 0);
+  SECTION("9. Injected INV-5 Sequential Desync is detected") {
+    // 9a. Test allocations in inactive Stage-1 unit on synthetic topology
+    {
+      const std::vector<ton::NodeInfo> nodes{
+          {.id = 0, .name = "N0", .lon_deg = 0.0, .lat_deg = 0.0},
+          {.id = 1, .name = "N1", .lon_deg = 1.0, .lat_deg = 0.0},
+          {.id = 2, .name = "N2", .lon_deg = 1.0, .lat_deg = 1.0},
+          {.id = 3, .name = "N3", .lon_deg = 0.0, .lat_deg = 1.0},
+          {.id = 4, .name = "N4", .lon_deg = 0.0, .lat_deg = 2.0},
+      };
+      const std::vector<ton::SpanInput> spans{
+          {.name = "S01", .u = 0, .v = 1, .override_length_km = 10.0},
+          {.name = "S12", .u = 1, .v = 2, .override_length_km = 10.0},
+          {.name = "S23", .u = 2, .v = 3, .override_length_km = 10.0},
+          {.name = "S30", .u = 3, .v = 0, .override_length_km = 10.0},
+          {.name = "S02", .u = 0, .v = 2, .override_length_km = 10.0},
+          {.name = "S13", .u = 1, .v = 3, .override_length_km = 10.0},
+          {.name = "S34", .u = 3, .v = 4, .override_length_km = 10.0},
+      };
+      const ton::Graph bridge_graph("bridge5", nodes, spans);
+      const auto bridge_span =
+          ton::ScenarioSet::enumerate(bridge_graph, ton::CutModel::Span,
+                                      /*enforce_benchmark_assertions=*/false);
+      ton::PathPool bridge_pool(bridge_graph, ton::DistanceMetric::HopCount,
+                                0.10, 5);
+      bridge_pool.prewarm_all_healthy();
 
-    // Find any inactive unit in nobel_span (or unit with index num_units - 1 if
-    // inactive)
-    ton::FailureUnitId inactive_u = ton::INVALID_FAILURE_UNIT;
-    for (ton::FailureUnitId u = 0; u < nobel_span.num_units(); ++u) {
-      if (!nobel_span.is_active_stage1_unit(u)) {
-        inactive_u = u;
-        break;
+      ton::FailureUnitId inactive_u = ton::INVALID_FAILURE_UNIT;
+      for (ton::FailureUnitId u = 0; u < bridge_span.num_units(); ++u) {
+        if (!bridge_span.is_active_stage1_unit(u)) {
+          inactive_u = u;
+          break;
+        }
       }
-    }
+      REQUIRE(inactive_u != ton::INVALID_FAILURE_UNIT);
 
-    if (inactive_u != ton::INVALID_FAILURE_UNIT) {
+      ton::NetworkState bridge_state(bridge_graph, bridge_span,
+                                     ton::FailureRegime::Sequential, 16);
+      const auto routes = bridge_pool.find_healthy(0, 2);
+      REQUIRE(!routes.empty());
+      const ton::Request bridge_req{.id = 0, .src = 0, .dst = 2};
+      const ton::Lightpath bridge_prim{.path_id = routes[0], .wavelength = 0};
+      const ton::StagedAssignments staged(16, 64);
+      bridge_state.commit(bridge_req, bridge_prim, staged, bridge_pool);
+
       const ton::BackupAssignment fake_ba{
-          .path_id = 0,
-          .req_id = run.state.admitted_ids()[0],
+          .path_id = routes[0],
+          .req_id = 0,
           .wavelength = 0,
       };
       ton::test::InvariantFuzzInjector::inject_sequential_desync(
-          run.state, inactive_u, fake_ba);
+          bridge_state, inactive_u, fake_ba);
+
+      const auto audit =
+          ton::InvariantAuditor::audit_state(bridge_state, bridge_pool);
+      REQUIRE_FALSE(audit.passed);
+      REQUIRE(audit.has_violation(ton::InvariantCode::INV5_SequentialDesync));
+    }
+
+    // 9b. Test missing cached Stage-1 backup on Nobel-EU
+    {
+      auto run = ton::run_provisioning_algorithm(
+          ton::AlgorithmId::SeqRDF, nobel, nobel_span, pool, stream);
+      REQUIRE(run.summary.total_granted > 0);
+
+      ton::FailureUnitId target_u = ton::INVALID_FAILURE_UNIT;
+      ton::RequestId severed_r = ton::INVALID_REQUEST;
+      for (const auto& sc : nobel_span.seq_scenarios()) {
+        const auto s1_backups = run.state.seq_stage1_backups(sc.x1);
+        if (!s1_backups.empty()) {
+          target_u = sc.x1;
+          severed_r = s1_backups[0].req_id;
+          break;
+        }
+      }
+      REQUIRE(target_u != ton::INVALID_FAILURE_UNIT);
+      REQUIRE(severed_r != ton::INVALID_REQUEST);
+
+      ton::test::InvariantFuzzInjector::inject_missing_stage1_backup(
+          run.state, target_u, severed_r);
 
       const auto audit = ton::InvariantAuditor::audit_state(run.state, pool);
       REQUIRE_FALSE(audit.passed);
