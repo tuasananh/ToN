@@ -370,4 +370,67 @@ TEST_CASE("InvariantAuditor: Trajectory Record and CSV Metric Audit",
 
     std::filesystem::remove(test_csv);
   }
+
+  SECTION("audit_trajectory_csv negative tests for corrupted files") {
+    // 1. Nonexistent file
+    {
+      const auto audit = ton::InvariantAuditor::audit_trajectory_csv(
+          ton::test::repo_root() / "build" / "nonexistent_file.csv");
+      REQUIRE_FALSE(audit.passed);
+      REQUIRE(!audit.violations.empty());
+    }
+
+    // 2. Empty file
+    {
+      const std::filesystem::path empty_csv =
+          ton::test::repo_root() / "build" / "test_empty.csv";
+      std::ofstream ofs(empty_csv);
+      ofs.close();
+
+      const auto audit = ton::InvariantAuditor::audit_trajectory_csv(empty_csv);
+      REQUIRE_FALSE(audit.passed);
+      REQUIRE(!audit.violations.empty());
+      REQUIRE(audit.violations[0].message.find("Empty CSV") !=
+              std::string::npos);
+
+      std::filesystem::remove(empty_csv);
+    }
+
+    // 3. Corrupted header
+    {
+      const std::filesystem::path bad_header_csv =
+          ton::test::repo_root() / "build" / "test_bad_header.csv";
+      std::ofstream ofs(bad_header_csv);
+      ofs << "foo,bar,baz,col4,col5\n";
+      ofs << "0,0,1,1,50.0,1,5,5,3,2,5.0,5.0,3.0,2.0,8.0,0.6\n";
+      ofs.close();
+
+      const auto audit =
+          ton::InvariantAuditor::audit_trajectory_csv(bad_header_csv);
+      REQUIRE_FALSE(audit.passed);
+      REQUIRE(!audit.violations.empty());
+      REQUIRE(audit.violations[0].message.find("header") != std::string::npos);
+
+      std::filesystem::remove(bad_header_csv);
+    }
+
+    // 4. Malformed / truncated row (< 16 tokens)
+    {
+      const std::filesystem::path truncated_row_csv =
+          ton::test::repo_root() / "build" / "test_truncated_row.csv";
+      std::ofstream ofs(truncated_row_csv);
+      ton::SpectralTelemetry::write_csv_header(ofs);
+      ofs << "0,0,1,1,50.0\n";  // only 5 columns
+      ofs.close();
+
+      const auto audit =
+          ton::InvariantAuditor::audit_trajectory_csv(truncated_row_csv);
+      REQUIRE_FALSE(audit.passed);
+      REQUIRE(!audit.violations.empty());
+      REQUIRE(audit.violations[0].message.find("Malformed row") !=
+              std::string::npos);
+
+      std::filesystem::remove(truncated_row_csv);
+    }
+  }
 }

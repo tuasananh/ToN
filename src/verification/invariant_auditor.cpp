@@ -227,9 +227,18 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
     }
     WavelengthMask expected_mask = EMPTY_MASK;
     for (uint8_t w = 0; w < NUM_WAVELENGTHS; ++w) {
-      if (primary_occupants[static_cast<size_t>(a) * NUM_WAVELENGTHS + w] !=
-          INVALID_REQUEST) {
+      const RequestId occ =
+          primary_occupants[static_cast<size_t>(a) * NUM_WAVELENGTHS + w];
+      if (occ != INVALID_REQUEST) {
         expected_mask |= wavelength_bit(w);
+      } else {
+        if (state.primary_owner(a, w) != INVALID_REQUEST) {
+          record_violation(
+              InvariantCode::INV1_PrimaryClash, state.primary_owner(a, w), a, w,
+              INVALID_SCENARIO, StateDomain::Sim,
+              "Unallocated primary slot (" + std::to_string(a) + ", " +
+                  std::to_string(w) + ") has active primary_owner");
+        }
       }
     }
     if (expected_mask != state.primary_mask(a)) {
@@ -776,6 +785,10 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
   }
 
   // 3. Spectral Telemetry and Refcount Invariant Verification
+  const StateDomain telemetry_domain =
+      (state.regime() == FailureRegime::Simultaneous) ? StateDomain::Sim
+                                                      : StateDomain::SeqStage1;
+
   for (ArcId a = 0; a < num_arcs; ++a) {
     if (should_stop()) {
       break;
@@ -789,7 +802,7 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
       if (actual_rc != expected_rc) {
         record_violation(
             InvariantCode::INV_SpectralRefcountDesync, INVALID_REQUEST, a, w,
-            INVALID_SCENARIO, StateDomain::Sim,
+            INVALID_SCENARIO, telemetry_domain,
             "Refcount mismatch: actual=" + std::to_string(actual_rc) +
                 " != expected=" + std::to_string(expected_rc));
       }
@@ -801,7 +814,7 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
     if (state.backup_active_mask(a) != expected_active) {
       record_violation(
           InvariantCode::INV_SpectralActiveMaskDesync, INVALID_REQUEST, a,
-          INVALID_WAVELENGTH, INVALID_SCENARIO, StateDomain::Sim,
+          INVALID_WAVELENGTH, INVALID_SCENARIO, telemetry_domain,
           "Backup active mask mismatch on arc " + std::to_string(a));
     }
   }
@@ -858,7 +871,7 @@ AuditResult InvariantAuditor::audit_state(const NetworkState& state,
   if (fast_metrics != result.evaluated_metrics) {
     record_violation(InvariantCode::INV_MetricConsistency, INVALID_REQUEST,
                      INVALID_ARC, INVALID_WAVELENGTH, INVALID_SCENARIO,
-                     StateDomain::Sim,
+                     telemetry_domain,
                      "SpectralTelemetry::evaluate does not match brute-force "
                      "evaluated metrics");
   }
@@ -964,18 +977,37 @@ AuditResult InvariantAuditor::audit_trajectory_csv(
     return result;
   }
 
+  // Verify column header format
+  if (!line.starts_with("t,src,dst,admitted,latency_us,k_adm")) {
+    result.passed = false;
+    result.violations.push_back(InvariantViolation{
+        .code = InvariantCode::INV_MetricRangeViolation,
+        .message = "Invalid or corrupted CSV header: " + line,
+    });
+    return result;
+  }
+
   uint32_t row_idx = 0;
   while (std::getline(ifs, line)) {
     if (line.empty()) {
       continue;
     }
-    std::stringstream ss(line);
-    std::string item;
-    std::vector<std::string> tokens;
-    while (std::getline(ss, item, ',')) {
-      tokens.push_back(item);
+
+    std::string_view line_view(line);
+    std::array<std::string_view, 16> tokens{};
+    size_t token_count = 0;
+    size_t start = 0;
+    while (start <= line_view.size() && token_count < 16) {
+      const size_t comma = line_view.find(',', start);
+      if (comma == std::string_view::npos) {
+        tokens[token_count++] = line_view.substr(start);
+        break;
+      }
+      tokens[token_count++] = line_view.substr(start, comma - start);
+      start = comma + 1;
     }
-    if (tokens.size() < 16) {
+
+    if (token_count < 16) {
       result.passed = false;
       result.violations.push_back(InvariantViolation{
           .code = InvariantCode::INV_MetricRangeViolation,
@@ -983,27 +1015,32 @@ AuditResult InvariantAuditor::audit_trajectory_csv(
           .message =
               "Malformed row in CSV at line " + std::to_string(row_idx + 2),
       });
+      ++row_idx;
       continue;
     }
 
     try {
       StepRecord rec{};
-      rec.t = static_cast<uint32_t>(std::stoul(tokens[0]));
-      rec.src = static_cast<NodeId>(std::stoul(tokens[1]));
-      rec.dst = static_cast<NodeId>(std::stoul(tokens[2]));
+      rec.t = static_cast<uint32_t>(std::stoul(std::string(tokens[0])));
+      rec.src = static_cast<NodeId>(std::stoul(std::string(tokens[1])));
+      rec.dst = static_cast<NodeId>(std::stoul(std::string(tokens[2])));
       rec.admitted = (tokens[3] == "1");
-      rec.latency_us = std::stod(tokens[4]);
-      rec.k_adm = static_cast<uint32_t>(std::stoul(tokens[5]));
-      rec.spectral.h_prim_slots = static_cast<uint32_t>(std::stoul(tokens[6]));
-      rec.spectral.h_back_slots = static_cast<uint32_t>(std::stoul(tokens[7]));
-      rec.spectral.h_pure_slots = static_cast<uint32_t>(std::stoul(tokens[8]));
-      rec.spectral.h_stub_slots = static_cast<uint32_t>(std::stoul(tokens[9]));
-      rec.spectral.u_prim_pct = std::stod(tokens[10]);
-      rec.spectral.u_back_pct = std::stod(tokens[11]);
-      rec.spectral.u_pure_pct = std::stod(tokens[12]);
-      rec.spectral.u_stub_pct = std::stod(tokens[13]);
-      rec.spectral.u_total_pct = std::stod(tokens[14]);
-      rec.spectral.overhead_ratio = std::stod(tokens[15]);
+      rec.latency_us = std::stod(std::string(tokens[4]));
+      rec.k_adm = static_cast<uint32_t>(std::stoul(std::string(tokens[5])));
+      rec.spectral.h_prim_slots =
+          static_cast<uint32_t>(std::stoul(std::string(tokens[6])));
+      rec.spectral.h_back_slots =
+          static_cast<uint32_t>(std::stoul(std::string(tokens[7])));
+      rec.spectral.h_pure_slots =
+          static_cast<uint32_t>(std::stoul(std::string(tokens[8])));
+      rec.spectral.h_stub_slots =
+          static_cast<uint32_t>(std::stoul(std::string(tokens[9])));
+      rec.spectral.u_prim_pct = std::stod(std::string(tokens[10]));
+      rec.spectral.u_back_pct = std::stod(std::string(tokens[11]));
+      rec.spectral.u_pure_pct = std::stod(std::string(tokens[12]));
+      rec.spectral.u_stub_pct = std::stod(std::string(tokens[13]));
+      rec.spectral.u_total_pct = std::stod(std::string(tokens[14]));
+      rec.spectral.overhead_ratio = std::stod(std::string(tokens[15]));
 
       AuditResult row_res = audit_step_record(rec, eps);
       if (!row_res.passed) {

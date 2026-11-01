@@ -123,8 +123,13 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (!verify_invariants_path.empty() &&
-        (topology_path.empty() || stream_path.empty())) {
+    if (!verify_invariants_path.empty()) {
+      if (!topology_path.empty() || !stream_path.empty()) {
+        throw std::invalid_argument(
+            "--verify-invariants <csv> is a standalone trajectory audit mode "
+            "and cannot be combined with simulation flags (--topology, "
+            "--stream)");
+      }
       std::cout << "Auditing trajectory CSV against metric invariants: "
                 << verify_invariants_path.string() << "\n";
       const auto audit_res =
