@@ -50,7 +50,9 @@ void print_usage(std::ostream& os, std::string_view prog) {
      << "  --verify-invariants [csv]    Audit trajectory CSV against metric "
         "invariants,\n"
      << "                               or verify state & metric invariants "
-        "during simulation\n"
+        "during simulation (default: true)\n"
+     << "  --no-verify-invariants       Disable on-the-fly invariant "
+        "verification\n"
      << "  -h, --help                   Show this help message\n";
 }
 
@@ -128,7 +130,7 @@ int main(int argc, char** argv) {
   std::string traffic_label;
   std::string seq_id_label;
   std::filesystem::path verify_invariants_path;
-  bool verify_invariants = false;
+  bool verify_invariants = true;
   ton::CutModel cut_model = ton::CutModel::Span;
   bool run_all_algorithms = true;
   ton::AlgorithmId single_algorithm = ton::AlgorithmId::SimRDF;
@@ -154,6 +156,8 @@ int main(int argc, char** argv) {
         if (i + 1 < argc && argv[i + 1][0] != '-') {
           verify_invariants_path = argv[++i];
         }
+      } else if (arg == "--no-verify-invariants") {
+        verify_invariants = false;
       } else if (arg == "--topology") {
         topology_path = require_value(arg);
       } else if (arg == "--stream") {
@@ -389,13 +393,14 @@ int main(int argc, char** argv) {
           }
         }
       }
+      const bool invariants_certified = verify_invariants && invariants_ok;
       if (!output_summary_path.empty()) {
         ton::append_run_summary_csv(output_summary_path, exp_label,
                                     graph.name(), cut_model_str, traffic_label,
-                                    seq_id_label, s, invariants_ok);
+                                    seq_id_label, s, invariants_certified);
       }
       collected_summaries.push_back(s);
-      collected_invariants.push_back(invariants_ok ? 1u : 0u);
+      collected_invariants.push_back(invariants_certified ? 1u : 0u);
     }
 
     if (!output_json_path.empty()) {
