@@ -353,8 +353,12 @@ def _worker_process_main(
     # Enforce strict P-core pinning
     try:
         os.sched_setaffinity(0, {cpu_id})
+        active_affinity = os.sched_getaffinity(0)
+        if active_affinity != {cpu_id}:
+            raise RuntimeError(f"Affinity mismatch: expected {{{cpu_id}}}, got {active_affinity}")
     except Exception as e:
-        print(f"[ERROR Worker {worker_idx}] Failed to pin to CPU {cpu_id}: {e}", file=sys.stderr)
+        print(f"[FATAL Worker {worker_idx}] Failed to pin to CPU {cpu_id}: {e}", file=sys.stderr)
+        raise
 
     while True:
         item = task_queue.get()
@@ -376,7 +380,11 @@ def _worker_process_main(
             except OSError:
                 pass
 
-        cmd = [
+        cmd: list[str] = []
+        taskset_bin = shutil.which("taskset")
+        if taskset_bin:
+            cmd.extend([taskset_bin, "-c", str(cpu_id)])
+        cmd.extend([
             engine_bin,
             "--topology",
             str(unit.topology_xml),
@@ -396,7 +404,7 @@ def _worker_process_main(
             step_prefix,
             "--output-summary",
             str(unit_summary_csv),
-        ]
+        ])
         if verify_invariants:
             cmd.append("--verify-invariants")
 
