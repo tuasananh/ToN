@@ -401,29 +401,20 @@ def _worker_process_main(
         )
 
         try:
-            peak_rss_kb = 0
-            status_file = f"/proc/{proc.pid}/status"
-            while proc.poll() is None:
-                try:
-                    with open(status_file, "r") as sf:
-                        for line in sf:
-                            if line.startswith("VmHWM:"):
-                                parts = line.split()
-                                if len(parts) >= 2:
-                                    peak_rss_kb = max(peak_rss_kb, int(parts[1]))
-                                break
-                except OSError:
-                    pass
-                time.sleep(0.05)
-
             stdout, stderr = proc.communicate()
             t1 = time.perf_counter()
             duration_s = t1 - t0
 
-            # Child process rusage fallback if /proc polling missed peak
-            child_ru = resource.getrusage(resource.RUSAGE_CHILDREN)
-            peak_rss_kb = max(peak_rss_kb, child_ru.ru_maxrss)
-            peak_rss_mib = peak_rss_kb / 1024.0
+            # Parse peak RSS reported by ton_engine
+            peak_rss_mib = 0.0
+            if stdout:
+                for line in stdout.splitlines():
+                    if line.startswith("[METRICS] peak_rss_mib="):
+                        try:
+                            peak_rss_mib = float(line.split("=")[1].strip())
+                        except ValueError:
+                            pass
+                        break
 
             retcode = proc.returncode
             status = "COMPLETED" if retcode == 0 else "FAILED"

@@ -1,3 +1,5 @@
+#include <sys/resource.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -408,6 +410,13 @@ int main(int argc, char** argv) {
                                 cut_model_str, traffic_label, seq_id_label,
                                 collected_summaries, collected_invariants);
     }
+
+    struct rusage usage{};
+    getrusage(RUSAGE_SELF, &usage);
+    const double peak_rss_mib = static_cast<double>(usage.ru_maxrss) / 1024.0;
+    std::cout << "[METRICS] peak_rss_mib=" << std::fixed << std::setprecision(2)
+              << peak_rss_mib << "\n";
+
     return EXIT_SUCCESS;
   } catch (const std::exception& ex) {
     std::cerr << "[ERROR] " << ex.what() << "\n";
