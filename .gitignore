@@ -8,4 +8,6 @@ compile_commands.json
 .cache/
 __pycache__/
 *.pyc
+*.lock
+results/summaries/units/
 .agents/teamwork

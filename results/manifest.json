@@ -1,14 +1,14 @@
 {
   "version": "1.0.0",
   "created_at": "2026-11-01T04:22:36.856397+00:00",
-  "updated_at": "2026-11-01T04:23:36.726486+00:00",
+  "updated_at": "2026-11-01T05:32:41.907086+00:00",
   "units": {
     "exp1_nobel-eu_span_realistic_s01": {
       "unit_id": "exp1_nobel-eu_span_realistic_s01",
       "status": "COMPLETED",
       "cpu_id": 2,
-      "duration_s": 12.883,
-      "peak_rss_mib": 25.8,
+      "duration_s": 9.112,
+      "peak_rss_mib": 33.34,
       "output_files": [
         "/home/tuasananh/repos/ToN/results/raw_steps/exp1_nobel-eu_realistic_s01_SimRDF.csv",
         "/home/tuasananh/repos/ToN/results/raw_steps/exp1_nobel-eu_realistic_s01_SeqRDF.csv",
@@ -25,8 +25,8 @@
       "unit_id": "exp2_nobel-eu_directional_realistic_s01",
       "status": "COMPLETED",
       "cpu_id": 4,
-      "duration_s": 15.987,
-      "peak_rss_mib": 53.52,
+      "duration_s": 12.137,
+      "peak_rss_mib": 68.79,
       "output_files": [
         "/home/tuasananh/repos/ToN/results/raw_steps/exp2_nobel-eu_realistic_s01_SimRDF.csv",
         "/home/tuasananh/repos/ToN/results/raw_steps/exp2_nobel-eu_realistic_s01_SeqRDF.csv",
@@ -43,8 +43,8 @@
       "unit_id": "exp1_germany50_span_1d1m_s01",
       "status": "COMPLETED",
       "cpu_id": 6,
-      "duration_s": 47.662,
-      "peak_rss_mib": 59.44,
+      "duration_s": 40.98,
+      "peak_rss_mib": 89.19,
       "output_files": [
         "/home/tuasananh/repos/ToN/results/raw_steps/exp1_germany50_1d1m_s01_SimRDF.csv",
         "/home/tuasananh/repos/ToN/results/raw_steps/exp1_germany50_1d1m_s01_SeqRDF.csv",
@@ -61,8 +61,8 @@
       "unit_id": "exp2_germany50_directional_1d1m_s01",
       "status": "COMPLETED",
       "cpu_id": 8,
-      "duration_s": 59.745,
-      "peak_rss_mib": 122.77,
+      "duration_s": 51.853,
+      "peak_rss_mib": 195.47,
       "output_files": [
         "/home/tuasananh/repos/ToN/results/raw_steps/exp2_germany50_1d1m_s01_SimRDF.csv",
         "/home/tuasananh/repos/ToN/results/raw_steps/exp2_germany50_1d1m_s01_SeqRDF.csv",
