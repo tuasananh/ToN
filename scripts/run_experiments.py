@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import fcntl
 import json
 import multiprocessing as mp
 import os
@@ -337,7 +338,7 @@ def _worker_process_main(
     cpu_id: int,
     engine_bin: str,
     raw_steps_dir: str,
-    summary_csv: str,
+    summaries_dir: str,
     verify_invariants: bool,
     task_queue: mp.Queue,
     result_queue: mp.Queue,
@@ -367,6 +368,14 @@ def _worker_process_main(
         # Target step prefix
         step_prefix = str(Path(raw_steps_dir) / unit.step_prefix)
 
+        unit_summary_csv = Path(summaries_dir) / "units" / f"{unit.unit_id}.csv"
+        unit_summary_csv.parent.mkdir(parents=True, exist_ok=True)
+        if unit_summary_csv.exists():
+            try:
+                unit_summary_csv.unlink()
+            except OSError:
+                pass
+
         cmd = [
             engine_bin,
             "--topology",
@@ -386,7 +395,7 @@ def _worker_process_main(
             "--output-step-prefix",
             step_prefix,
             "--output-summary",
-            summary_csv,
+            str(unit_summary_csv),
         ]
         if verify_invariants:
             cmd.append("--verify-invariants")
@@ -423,9 +432,13 @@ def _worker_process_main(
             output_files = [str(p) for p in unit.expected_step_files(Path(raw_steps_dir))]
 
             # Verify output files exist and are complete
-            if retcode == 0 and not check_unit_files_intact(unit, Path(raw_steps_dir)):
-                status = "FAILED"
-                err_msg = "Output trajectory CSV files were incomplete or missing."
+            if retcode == 0:
+                if not check_unit_files_intact(unit, Path(raw_steps_dir)):
+                    status = "FAILED"
+                    err_msg = "Output trajectory CSV files were incomplete or missing."
+                elif not unit_summary_csv.exists():
+                    status = "FAILED"
+                    err_msg = "Unit summary CSV file was not emitted."
 
             res = UnitExecutionResult(
                 unit_id=unit_id,
@@ -487,6 +500,50 @@ class ExperimentRunner:
 
         self.cpu_ids = get_pcore_cpu_ids(num_workers)
 
+    def _commit_unit_summary(self, unit_summary_path: Path) -> None:
+        """Atomically merge unit summary rows into the master summary CSV with keyed deduplication."""
+        with open(unit_summary_path, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+            if not lines:
+                return
+            header = lines[0]
+            unit_rows = lines[1:]
+
+        self.summary_csv.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.summary_csv.with_suffix(".lock")
+
+        with open(lock_path, "w", encoding="utf-8") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)
+            try:
+                # Key format: (exp, topology, cut_model, traffic, seq_id, algorithm)
+                existing_rows: dict[tuple[str, ...], str] = {}
+                if self.summary_csv.exists():
+                    with open(self.summary_csv, "r", encoding="utf-8") as mf:
+                        m_lines = [l.strip() for l in mf if l.strip()]
+                        if m_lines:
+                            for row in m_lines[1:]:
+                                cols = row.split(",")
+                                if len(cols) >= 6:
+                                    key = tuple(cols[:6])
+                                    existing_rows[key] = row
+
+                # Update with unit rows
+                for row in unit_rows:
+                    cols = row.split(",")
+                    if len(cols) >= 6:
+                        key = tuple(cols[:6])
+                        existing_rows[key] = row
+
+                # Write atomically via temp file
+                tmp_summary = self.summary_csv.with_suffix(".tmp")
+                with open(tmp_summary, "w", encoding="utf-8") as tf:
+                    tf.write(header + "\n")
+                    for row in existing_rows.values():
+                        tf.write(row + "\n")
+                tmp_summary.replace(self.summary_csv)
+            finally:
+                fcntl.flock(lf, fcntl.LOCK_UN)
+
     def run(self) -> int:
         if not self.engine_bin.is_file():
             print(f"[FATAL] ton_engine binary not found at {self.engine_bin}", file=sys.stderr)
@@ -547,7 +604,7 @@ class ExperimentRunner:
                     cpu_id,
                     str(self.engine_bin),
                     str(self.raw_steps_dir),
-                    str(self.summary_csv),
+                    str(self.summaries_dir),
                     self.verify_invariants,
                     task_queue,
                     result_queue,
@@ -592,6 +649,9 @@ class ExperimentRunner:
 
             elapsed = time.perf_counter() - start_time
             if res.status == "COMPLETED":
+                unit_csv = self.summaries_dir / "units" / f"{res.unit_id}.csv"
+                if unit_csv.exists():
+                    self._commit_unit_summary(unit_csv)
                 completed_units += 1
                 rate = completed_units / elapsed if elapsed > 0 else 0.0
                 remaining = (total_to_run - completed_units) / rate if rate > 0 else 0.0
