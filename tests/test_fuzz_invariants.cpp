@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <array>
+#include <random>
 #include <vector>
 
 #include "test_helpers.hpp"
@@ -21,6 +23,11 @@ class InvariantFuzzInjector {
     state.primary_owner_[static_cast<size_t>(a) * NUM_WAVELENGTHS + w] = r1;
     // Set r2 primary lightpath to share (a, w)
     state.primary_lightpaths_[r2].wavelength = w;
+  }
+
+  static void inject_duplicate_primary_route(NetworkState& state, RequestId r1,
+                                             RequestId r2) {
+    state.primary_lightpaths_[r2] = state.primary_lightpaths_[r1];
   }
 
   // 2. INV-1 Backup Clash
@@ -656,5 +663,200 @@ TEST_CASE("Adversarial Invariant Fuzz Harness: 100% Detection Sensitivity",
     REQUIRE_FALSE(audit.passed);
     REQUIRE(
         audit.has_violation(ton::InvariantCode::INV_SpectralActiveMaskDesync));
+  }
+}
+
+TEST_CASE("Randomized Disruption Invariant Fuzzing",
+          "[verification][fuzz][randomized]") {
+  const auto nobel = ton::Graph::from_sndlib_xml(
+      ton::test::repo_root() / "data" / "topologies" / "nobel-eu.xml");
+  const auto nobel_span =
+      ton::ScenarioSet::enumerate(nobel, ton::CutModel::Span);
+  const auto stream =
+      ton::load_request_stream_csv(ton::test::repo_root() / "data" / "streams" /
+                                       "nobel_eu_realistic_seed_01.csv",
+                                   40);
+  REQUIRE(stream.size() == 40);
+
+  ton::PathPool pool(nobel, ton::DistanceMetric::GeographicKm, 0.10, 10);
+  pool.prewarm_for_stream(stream, nobel_span);
+
+  constexpr std::array<uint64_t, 3> kSeeds = {42ULL, 1337ULL, 2026ULL};
+
+  for (const uint64_t seed : kSeeds) {
+    std::mt19937_64 rng(seed);
+
+    // 1. Simultaneous Regime Randomized Fuzzing
+    for (int iter = 0; iter < 20; ++iter) {
+      auto run = ton::run_provisioning_algorithm(
+          ton::AlgorithmId::SimRDF, nobel, nobel_span, pool, stream);
+      REQUIRE(run.summary.total_granted >= 5);
+
+      const int disruption_type = std::uniform_int_distribution<int>(0, 5)(rng);
+
+      switch (disruption_type) {
+        case 0: {
+          // Primary clash: r2 duplicates r1's exact primary route and
+          // wavelength
+          const auto& admitted = run.state.admitted_ids();
+          std::uniform_int_distribution<size_t> r_dist(0, admitted.size() - 1);
+          const size_t idx1 = r_dist(rng);
+          size_t idx2 = r_dist(rng);
+          while (idx1 == idx2) {
+            idx2 = r_dist(rng);
+          }
+          const ton::RequestId r1 = admitted[idx1];
+          const ton::RequestId r2 = admitted[idx2];
+          ton::test::InvariantFuzzInjector::inject_duplicate_primary_route(
+              run.state, r1, r2);
+          break;
+        }
+        case 1: {
+          // Primary wavelength out-of-range
+          const auto& admitted = run.state.admitted_ids();
+          std::uniform_int_distribution<size_t> r_dist(0, admitted.size() - 1);
+          const ton::RequestId r = admitted[r_dist(rng)];
+          const uint8_t bad_w = static_cast<uint8_t>(
+              std::uniform_int_distribution<int>(32, 255)(rng));
+          ton::test::InvariantFuzzInjector::
+              inject_primary_wavelength_out_of_range(run.state, r, bad_w);
+          break;
+        }
+        case 2: {
+          // Primary hop wavelength desync
+          const auto& admitted = run.state.admitted_ids();
+          std::uniform_int_distribution<size_t> r_dist(0, admitted.size() - 1);
+          const ton::RequestId r = admitted[r_dist(rng)];
+          const auto& prim = run.state.primary_lightpath(r);
+          const auto arcs = pool.path_arcs(prim.path_id);
+          if (!arcs.empty()) {
+            std::uniform_int_distribution<size_t> arc_dist(0, arcs.size() - 1);
+            const ton::ArcId a = arcs[arc_dist(rng)];
+            const uint8_t desync_w =
+                static_cast<uint8_t>((prim.wavelength + 1) % 32);
+            ton::test::InvariantFuzzInjector::
+                inject_primary_hop_wavelength_desync(run.state, r, a, desync_w);
+          }
+          break;
+        }
+        case 3: {
+          // False backup: inject backup for an intact request
+          std::uniform_int_distribution<size_t> sc_dist(
+              0, nobel_span.sim_scenarios().size() - 1);
+          const size_t sc_idx = sc_dist(rng);
+          const auto& sc = nobel_span.sim_scenarios()[sc_idx];
+          for (const ton::RequestId r : run.state.admitted_ids()) {
+            const auto& prim = run.state.primary_lightpath(r);
+            if (!pool.path_intersects(prim.path_id, sc.cut_arcs)) {
+              ton::test::InvariantFuzzInjector::inject_false_backup(
+                  run.state, sc.id, r, prim.path_id, prim.wavelength);
+              break;
+            }
+          }
+          break;
+        }
+        case 4: {
+          // Missed backup: delete an active backup
+          for (const auto& sc : nobel_span.sim_scenarios()) {
+            if (!run.state.sim_backups(sc.id).empty()) {
+              const ton::RequestId r = run.state.sim_backups(sc.id)[0].req_id;
+              ton::test::InvariantFuzzInjector::inject_missed_backup(run.state,
+                                                                     sc.id, r);
+              break;
+            }
+          }
+          break;
+        }
+        case 5: {
+          // Spectral refcount desync
+          std::uniform_int_distribution<ton::ArcId> arc_dist(
+              0, static_cast<ton::ArcId>(nobel.num_arcs() - 1));
+          std::uniform_int_distribution<uint8_t> w_dist(0, 31);
+          ton::test::InvariantFuzzInjector::inject_spectral_refcount_desync(
+              run.state, arc_dist(rng), w_dist(rng), 1);
+          break;
+        }
+        case 6: {
+          // Spectral active mask desync
+          std::uniform_int_distribution<ton::ArcId> arc_dist(
+              0, static_cast<ton::ArcId>(nobel.num_arcs() - 1));
+          std::uniform_int_distribution<uint8_t> w_dist(0, 31);
+          ton::test::InvariantFuzzInjector::inject_spectral_active_mask_desync(
+              run.state, arc_dist(rng), w_dist(rng));
+          break;
+        }
+      }
+
+      const auto audit = ton::InvariantAuditor::audit_state(run.state, pool);
+      REQUIRE_FALSE(audit.passed);
+      REQUIRE(!audit.violations.empty());
+    }
+
+    // 2. Sequential Regime Randomized Fuzzing
+    for (int iter = 0; iter < 10; ++iter) {
+      auto seq_run = ton::run_provisioning_algorithm(
+          ton::AlgorithmId::SeqRDF, nobel, nobel_span, pool, stream);
+      REQUIRE(seq_run.summary.total_granted >= 5);
+
+      const int seq_disruption = std::uniform_int_distribution<int>(0, 2)(rng);
+      switch (seq_disruption) {
+        case 0: {
+          // Invalidate Stage-1 backup route
+          for (ton::FailureUnitId u = 0; u < nobel_span.num_units(); ++u) {
+            if (!seq_run.state.seq_stage1_backups(u).empty()) {
+              const ton::RequestId r =
+                  seq_run.state.seq_stage1_backups(u)[0].req_id;
+              ton::test::InvariantFuzzInjector::inject_seq_s1_invalid_route(
+                  seq_run.state, u, r, ton::INVALID_PATH);
+              break;
+            }
+          }
+          break;
+        }
+        case 1: {
+          // Missing Stage-1 cached backup
+          for (const auto& sc : nobel_span.seq_scenarios()) {
+            const auto s1 = seq_run.state.seq_stage1_backups(sc.x1);
+            if (!s1.empty()) {
+              ton::test::InvariantFuzzInjector::inject_missing_stage1_backup(
+                  seq_run.state, sc.x1, s1[0].req_id);
+              break;
+            }
+          }
+          break;
+        }
+        case 2: {
+          // Broken sequential lock
+          for (const auto& sc : nobel_span.seq_scenarios()) {
+            const auto s1 = seq_run.state.seq_stage1_backups(sc.x1);
+            const auto s2 = seq_run.state.seq_stage2_backups(sc.id);
+            bool found = false;
+            for (const auto& ba1 : s1) {
+              if (!pool.path_intersects(ba1.path_id, sc.stage2_cut)) {
+                for (const auto& ba2 : s2) {
+                  if (ba2.req_id == ba1.req_id) {
+                    const uint8_t alt_w =
+                        static_cast<uint8_t>((ba2.wavelength + 1) % 32);
+                    ton::test::InvariantFuzzInjector::
+                        inject_broken_sequential_lock(seq_run.state, sc.id,
+                                                      ba2.req_id, alt_w);
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+            }
+            if (found) break;
+          }
+          break;
+        }
+      }
+
+      const auto audit =
+          ton::InvariantAuditor::audit_state(seq_run.state, pool);
+      REQUIRE_FALSE(audit.passed);
+      REQUIRE(!audit.violations.empty());
+    }
   }
 }
