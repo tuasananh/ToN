@@ -189,9 +189,8 @@ TEST_CASE(
       pool.prewarm_for_stream(stream, nobel_span);
 
       for (const ton::AlgorithmId alg : ton::ALL_ALGORITHMS) {
-        execute_phase4_audit(
-            alg, nobel, nobel_span, pool, stream, audit_pts,
-            /*check_repeatability=*/(alg == ton::AlgorithmId::SimRDF));
+        execute_phase4_audit(alg, nobel, nobel_span, pool, stream, audit_pts,
+                             /*check_repeatability=*/true);
       }
     }
   }
@@ -210,9 +209,8 @@ TEST_CASE(
       pool.prewarm_for_stream(stream, nobel_dir);
 
       for (const ton::AlgorithmId alg : ton::ALL_ALGORITHMS) {
-        execute_phase4_audit(
-            alg, nobel, nobel_dir, pool, stream, audit_pts,
-            /*check_repeatability=*/(alg == ton::AlgorithmId::SeqRDF));
+        execute_phase4_audit(alg, nobel, nobel_dir, pool, stream, audit_pts,
+                             /*check_repeatability=*/true);
       }
     }
   }
@@ -243,9 +241,8 @@ TEST_CASE(
       pool.prewarm_for_stream(stream, germany_span);
 
       for (const ton::AlgorithmId alg : ton::ALL_ALGORITHMS) {
-        execute_phase4_audit(
-            alg, germany, germany_span, pool, stream, audit_pts,
-            /*check_repeatability=*/(alg == ton::AlgorithmId::SimRDF));
+        execute_phase4_audit(alg, germany, germany_span, pool, stream,
+                             audit_pts, /*check_repeatability=*/true);
       }
     }
   }
@@ -277,9 +274,8 @@ TEST_CASE(
       pool.prewarm_for_stream(stream, germany_dir);
 
       for (const ton::AlgorithmId alg : ton::ALL_ALGORITHMS) {
-        execute_phase4_audit(
-            alg, germany, germany_dir, pool, stream, audit_pts,
-            /*check_repeatability=*/(alg == ton::AlgorithmId::SimRDF));
+        execute_phase4_audit(alg, germany, germany_dir, pool, stream, audit_pts,
+                             /*check_repeatability=*/true);
       }
     }
   }
