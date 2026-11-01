@@ -197,14 +197,14 @@ TEST_CASE(
   }
 
   SECTION("Nobel-EU: Seeds 01, 02, 03 Directional Cuts Periodic Auditing") {
-    const std::vector<size_t> audit_pts = {100, 250, 500};
+    const std::vector<size_t> audit_pts = {100, 250, 500, 750, 999};
 
     for (const char* seed_file :
          {"nobel_eu_realistic_seed_01.csv", "nobel_eu_realistic_seed_02.csv",
           "nobel_eu_realistic_seed_03.csv"}) {
       const auto stream = ton::load_request_stream_csv(
-          ton::test::repo_root() / "data" / "streams" / seed_file, 500);
-      REQUIRE(stream.size() == 500);
+          ton::test::repo_root() / "data" / "streams" / seed_file, 1000);
+      REQUIRE(stream.size() == 1000);
 
       ton::PathPool pool(nobel, ton::DistanceMetric::GeographicKm, 0.10, 10);
       pool.prewarm_for_stream(stream, nobel_dir);
