@@ -39,7 +39,7 @@ flowchart TD
    - Total runs: $2 \times 2 \times 28 \times 6 = \mathbf{672\text{ runs}}$.
 
 3. **`EXP-3` — Arrival-Order Permutation Sensitivity (360 Runs):**
-   - **Topologies:** `Nobel-EU` and `Germany50` under Directional cuts.
+   - **Topologies:** `Nobel-EU` and `Germany50` under Bidirectional Span cuts (`EXPERIMENTS.md` Section 3.3).
    - **Fixed Request Multiset:** Canonical Seed-1 Realistic traffic ($1,000$ requests) partitioned into $30$ deterministic permutations:
      - $28$ seeded Fisher-Yates uniform shuffles (`perm_01` .. `perm_28`).
      - $1$ Shortest-First boundary order (`perm_shortest_first` sorted ascending by Haversine distance $d_G(s, d)$).
@@ -180,7 +180,7 @@ flowchart TD
 Before Phase 5 can be certified as complete and Phase 6 statistical analysis launched:
 
 - [ ] `scripts/run_experiments.py` supports `--workers N` ($1 \le N \le 8$) with strict P-core affinity leaving `CPU 0` free when $N < 8$.
-- [ ] Pilot benchmark (24 runs) executes cleanly with peak RAM $< 35\text{ MiB}$ per worker process.
+- [ ] Pilot benchmark (24 runs) executes cleanly with peak RAM $< 30\text{ MiB}$ for Nobel-EU Span / $< 60\text{ MiB}$ for Germany50 Span and $< 125\text{ MiB}$ for Germany50 Directional ($30,756$ dual-cut scenarios).
 - [ ] All 1,704 benchmark runs completed with atomic `.tmp` $\to$ `.csv` commits.
 - [ ] `results/summaries/all_runs_summary.csv` contains exactly 1,704 rows with 0 missing/corrupted entries.
 - [ ] Every single run has `invariants_verified == true` signed off by `InvariantAuditor`.

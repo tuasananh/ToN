@@ -276,5 +276,41 @@ TEST_CASE("NetworkState, StagingArena, and sub-0.5us SpectralTelemetry",
     REQUIRE(lines[1].find("SimRDF") != std::string::npos);
     REQUIRE(lines[2].find("SeqRDF") != std::string::npos);
     std::filesystem::remove(temp_csv);
+
+    // Test write_telemetry_json
+    const std::filesystem::path temp_json =
+        std::filesystem::temp_directory_path() / "ton_test_telemetry.json";
+    std::filesystem::remove(temp_json);
+
+    std::vector<ton::RunSummary> summaries;
+    ton::RunSummary s1{};
+    s1.algorithm = ton::AlgorithmId::SimRDF;
+    s1.regime = ton::FailureRegime::Simultaneous;
+    s1.first_denial_idx = 131;
+    s1.total_granted = 313;
+    s1.blocking_prob = 0.687;
+    s1.mean_latency_pre_denial_us = 2229.22;
+    s1.p95_latency_pre_denial_us = 3120.45;
+    s1.mean_latency_full_us = 1962.94;
+    s1.mean_latency_rejected_us = 1840.12;
+    s1.refcounts_exact = true;
+    summaries.push_back(s1);
+
+    std::vector<uint8_t> inv_verified = {1};
+
+    ton::write_telemetry_json(temp_json, "exp1", "nobel-eu", "span",
+                              "realistic", "s01", summaries, inv_verified);
+
+    REQUIRE(std::filesystem::exists(temp_json));
+    std::ifstream json_ifs(temp_json);
+    REQUIRE(json_ifs.is_open());
+    std::string json_content((std::istreambuf_iterator<char>(json_ifs)),
+                             std::istreambuf_iterator<char>());
+    REQUIRE(json_content.find("\"exp\": \"exp1\"") != std::string::npos);
+    REQUIRE(json_content.find("\"algorithm\": \"SimRDF\"") !=
+            std::string::npos);
+    REQUIRE(json_content.find("\"invariants_verified\": true") !=
+            std::string::npos);
+    std::filesystem::remove(temp_json);
   }
 }
