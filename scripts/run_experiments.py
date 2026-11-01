@@ -572,6 +572,9 @@ class ExperimentRunner:
             if not self.force and ledger.is_completed(unit.unit_id):
                 if check_unit_files_intact(unit, self.raw_steps_dir):
                     skipped_count += 1
+                    unit_csv = self.summaries_dir / "units" / f"{unit.unit_id}.csv"
+                    if unit_csv.exists() and not self.dry_run:
+                        self._commit_unit_summary(unit_csv)
                     continue
             units_to_run.append(unit)
 
