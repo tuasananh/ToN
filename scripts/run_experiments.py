@@ -343,6 +343,12 @@ def _worker_process_main(
     result_queue: mp.Queue,
 ) -> None:
     """Worker process loop pinned to dedicated P-core."""
+    def _worker_sig_handler(signum, frame):
+        sys.exit(1)
+
+    signal.signal(signal.SIGTERM, _worker_sig_handler)
+    signal.signal(signal.SIGINT, _worker_sig_handler)
+
     # Enforce strict P-core pinning
     try:
         os.sched_setaffinity(0, {cpu_id})
@@ -391,55 +397,68 @@ def _worker_process_main(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
 
-        peak_rss_kb = 0
-        status_file = f"/proc/{proc.pid}/status"
-        while proc.poll() is None:
-            try:
-                with open(status_file, "r") as sf:
-                    for line in sf:
-                        if line.startswith("VmHWM:"):
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                peak_rss_kb = max(peak_rss_kb, int(parts[1]))
-                            break
-            except OSError:
-                pass
-            time.sleep(0.05)
+        try:
+            peak_rss_kb = 0
+            status_file = f"/proc/{proc.pid}/status"
+            while proc.poll() is None:
+                try:
+                    with open(status_file, "r") as sf:
+                        for line in sf:
+                            if line.startswith("VmHWM:"):
+                                parts = line.split()
+                                if len(parts) >= 2:
+                                    peak_rss_kb = max(peak_rss_kb, int(parts[1]))
+                                break
+                except OSError:
+                    pass
+                time.sleep(0.05)
 
-        stdout, stderr = proc.communicate()
-        t1 = time.perf_counter()
-        duration_s = t1 - t0
+            stdout, stderr = proc.communicate()
+            t1 = time.perf_counter()
+            duration_s = t1 - t0
 
-        # Child process rusage fallback if /proc polling missed peak
-        child_ru = resource.getrusage(resource.RUSAGE_CHILDREN)
-        peak_rss_kb = max(peak_rss_kb, child_ru.ru_maxrss)
-        peak_rss_mib = peak_rss_kb / 1024.0
+            # Child process rusage fallback if /proc polling missed peak
+            child_ru = resource.getrusage(resource.RUSAGE_CHILDREN)
+            peak_rss_kb = max(peak_rss_kb, child_ru.ru_maxrss)
+            peak_rss_mib = peak_rss_kb / 1024.0
 
-        retcode = proc.returncode
-        status = "COMPLETED" if retcode == 0 else "FAILED"
-        err_msg = stderr if retcode != 0 else None
+            retcode = proc.returncode
+            status = "COMPLETED" if retcode == 0 else "FAILED"
+            err_msg = stderr if retcode != 0 else None
 
-        output_files = [str(p) for p in unit.expected_step_files(Path(raw_steps_dir))]
+            output_files = [str(p) for p in unit.expected_step_files(Path(raw_steps_dir))]
 
-        # Verify output files exist and are complete
-        if retcode == 0 and not check_unit_files_intact(unit, Path(raw_steps_dir)):
-            status = "FAILED"
-            err_msg = "Output trajectory CSV files were incomplete or missing."
+            # Verify output files exist and are complete
+            if retcode == 0 and not check_unit_files_intact(unit, Path(raw_steps_dir)):
+                status = "FAILED"
+                err_msg = "Output trajectory CSV files were incomplete or missing."
 
-        res = UnitExecutionResult(
-            unit_id=unit_id,
-            status=status,
-            cpu_id=cpu_id,
-            duration_s=round(duration_s, 3),
-            peak_rss_mib=round(peak_rss_mib, 2),
-            output_files=output_files,
-            invariants_verified=(retcode == 0 and verify_invariants),
-            returncode=retcode,
-            error=err_msg,
-        )
-        result_queue.put((res, stdout, stderr))
+            res = UnitExecutionResult(
+                unit_id=unit_id,
+                status=status,
+                cpu_id=cpu_id,
+                duration_s=round(duration_s, 3),
+                peak_rss_mib=round(peak_rss_mib, 2),
+                output_files=output_files,
+                invariants_verified=(retcode == 0 and verify_invariants),
+                returncode=retcode,
+                error=err_msg,
+            )
+            result_queue.put((res, stdout, stderr))
+        finally:
+            if proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                    proc.wait(timeout=2.0)
+                except (subprocess.TimeoutExpired, ProcessLookupError, PermissionError):
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                        proc.wait(timeout=1.0)
+                    except (ProcessLookupError, PermissionError):
+                        pass
 
 
 class ExperimentRunner:
@@ -557,6 +576,8 @@ class ExperimentRunner:
             for w in workers:
                 if w.is_alive():
                     w.terminate()
+            for w in workers:
+                w.join(timeout=2.0)
             sys.exit(130)
 
         signal.signal(signal.SIGINT, handle_signal)
