@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cmath>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -216,5 +217,64 @@ TEST_CASE("NetworkState, StagingArena, and sub-0.5us SpectralTelemetry",
 #else
     REQUIRE(avg_us < 50.0);
 #endif
+  }
+
+  SECTION("Master summary CSV and JSON export schema") {
+    const std::string_view header = ton::MASTER_SUMMARY_CSV_HEADER;
+    // Count commas in header: 23 columns means exactly 22 commas
+    size_t comma_count = 0;
+    for (char c : header) {
+      if (c == ',') ++comma_count;
+    }
+    REQUIRE(comma_count == 22);
+
+    const std::string formatted =
+        ton::SpectralTelemetry::format_summary_csv_row(
+            "exp1", "nobel-eu", "span", "realistic", "s01",
+            ton::AlgorithmId::SimRDF, ton::FailureRegime::Simultaneous,
+            "DSATUR", 131, 313, 0.687, 2229.22, 3120.45, 1962.94, 1840.12,
+            28.47, 70.54, 2.4779, 28.47, 70.54, 19.21, 2.4779, true);
+
+    size_t row_commas = 0;
+    for (char c : formatted) {
+      if (c == ',') ++row_commas;
+    }
+    REQUIRE(row_commas == 22);
+    REQUIRE(formatted.ends_with(",true\n"));
+
+    const std::filesystem::path temp_csv =
+        std::filesystem::temp_directory_path() / "ton_test_summary_append.csv";
+    std::filesystem::remove(temp_csv);
+
+    ton::SpectralTelemetry::append_summary_csv_row(
+        temp_csv, "exp1", "nobel-eu", "span", "realistic", "s01",
+        ton::AlgorithmId::SimRDF, ton::FailureRegime::Simultaneous, "DSATUR",
+        131, 313, 0.687, 2229.22, 3120.45, 1962.94, 1840.12, 28.47, 70.54,
+        2.4779, 28.47, 70.54, 19.21, 2.4779, true);
+
+    ton::SpectralTelemetry::append_summary_csv_row(
+        temp_csv, "exp1", "nobel-eu", "span", "realistic", "s01",
+        ton::AlgorithmId::SeqRDF, ton::FailureRegime::Sequential, "DSATUR", 126,
+        308, 0.692, 1918.71, 2800.12, 2799.77, 2600.50, 28.28, 70.66, 2.4987,
+        28.28, 70.66, 18.83, 2.4987, true);
+
+    std::ifstream ifs(temp_csv);
+    REQUIRE(ifs.is_open());
+    std::string line;
+    std::vector<std::string> lines;
+    while (std::getline(ifs, line)) {
+      if (!line.empty()) lines.push_back(line);
+    }
+    REQUIRE(lines.size() == 3);  // Header + 2 data rows
+    REQUIRE(lines[0] ==
+            "exp,topology,cut_model,traffic,seq_id,algorithm,regime,heuristic,"
+            "first_denial_idx,total_granted,blocking_prob,mean_latency_pre_"
+            "denial_us,p95_latency_pre_denial_us,mean_latency_full_us,mean_"
+            "latency_rejected_us,u_prim_at_denial,u_pure_at_denial,overhead_at_"
+            "denial,u_prim_final,u_pure_final,u_stub_final,overhead_final,"
+            "invariants_verified");
+    REQUIRE(lines[1].find("SimRDF") != std::string::npos);
+    REQUIRE(lines[2].find("SeqRDF") != std::string::npos);
+    std::filesystem::remove(temp_csv);
   }
 }

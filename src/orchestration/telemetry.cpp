@@ -1,10 +1,16 @@
 #include "ton/orchestration/telemetry.hpp"
 
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <array>
 #include <bit>
 #include <fstream>
 #include <iomanip>
 #include <ostream>
+#include <sstream>
 #include <stdexcept>
 
 namespace ton {
@@ -210,6 +216,119 @@ void SpectralTelemetry::write_step_records_csv(
     }
   }
   std::filesystem::rename(tmp_path, csv_path);
+}
+
+void SpectralTelemetry::write_summary_csv_header(std::ostream& os) {
+  os << MASTER_SUMMARY_CSV_HEADER;
+}
+
+void SpectralTelemetry::write_summary_csv_row(
+    std::ostream& os, std::string_view exp, std::string_view topology,
+    std::string_view cut_model, std::string_view traffic,
+    std::string_view seq_id, AlgorithmId algorithm, FailureRegime regime,
+    std::string_view heuristic, uint32_t first_denial_idx,
+    uint32_t total_granted, double blocking_prob,
+    double mean_latency_pre_denial_us, double p95_latency_pre_denial_us,
+    double mean_latency_full_us, double mean_latency_rejected_us,
+    double u_prim_at_denial, double u_pure_at_denial, double overhead_at_denial,
+    double u_prim_final, double u_pure_final, double u_stub_final,
+    double overhead_final, bool invariants_verified) {
+  const auto old_flags = os.flags();
+  const auto old_prec = os.precision();
+  os << exp << ',' << topology << ',' << cut_model << ',' << traffic << ','
+     << seq_id << ',' << algorithm_name(algorithm) << ','
+     << (regime == FailureRegime::Simultaneous ? "Simultaneous" : "Sequential")
+     << ',' << heuristic << ',' << first_denial_idx << ',' << total_granted
+     << ',' << std::fixed << std::setprecision(6) << blocking_prob << ','
+     << mean_latency_pre_denial_us << ',' << p95_latency_pre_denial_us << ','
+     << mean_latency_full_us << ',' << mean_latency_rejected_us << ','
+     << u_prim_at_denial << ',' << u_pure_at_denial << ',' << overhead_at_denial
+     << ',' << u_prim_final << ',' << u_pure_final << ',' << u_stub_final << ','
+     << overhead_final << ',' << (invariants_verified ? "true" : "false")
+     << '\n';
+  os.flags(old_flags);
+  os.precision(old_prec);
+}
+
+std::string SpectralTelemetry::format_summary_csv_row(
+    std::string_view exp, std::string_view topology, std::string_view cut_model,
+    std::string_view traffic, std::string_view seq_id, AlgorithmId algorithm,
+    FailureRegime regime, std::string_view heuristic, uint32_t first_denial_idx,
+    uint32_t total_granted, double blocking_prob,
+    double mean_latency_pre_denial_us, double p95_latency_pre_denial_us,
+    double mean_latency_full_us, double mean_latency_rejected_us,
+    double u_prim_at_denial, double u_pure_at_denial, double overhead_at_denial,
+    double u_prim_final, double u_pure_final, double u_stub_final,
+    double overhead_final, bool invariants_verified) {
+  std::ostringstream oss;
+  write_summary_csv_row(
+      oss, exp, topology, cut_model, traffic, seq_id, algorithm, regime,
+      heuristic, first_denial_idx, total_granted, blocking_prob,
+      mean_latency_pre_denial_us, p95_latency_pre_denial_us,
+      mean_latency_full_us, mean_latency_rejected_us, u_prim_at_denial,
+      u_pure_at_denial, overhead_at_denial, u_prim_final, u_pure_final,
+      u_stub_final, overhead_final, invariants_verified);
+  return oss.str();
+}
+
+void SpectralTelemetry::append_summary_csv_row(
+    const std::filesystem::path& csv_path, std::string_view exp,
+    std::string_view topology, std::string_view cut_model,
+    std::string_view traffic, std::string_view seq_id, AlgorithmId algorithm,
+    FailureRegime regime, std::string_view heuristic, uint32_t first_denial_idx,
+    uint32_t total_granted, double blocking_prob,
+    double mean_latency_pre_denial_us, double p95_latency_pre_denial_us,
+    double mean_latency_full_us, double mean_latency_rejected_us,
+    double u_prim_at_denial, double u_pure_at_denial, double overhead_at_denial,
+    double u_prim_final, double u_pure_final, double u_stub_final,
+    double overhead_final, bool invariants_verified) {
+  if (csv_path.has_parent_path()) {
+    std::filesystem::create_directories(csv_path.parent_path());
+  }
+
+  const std::string row_str = format_summary_csv_row(
+      exp, topology, cut_model, traffic, seq_id, algorithm, regime, heuristic,
+      first_denial_idx, total_granted, blocking_prob,
+      mean_latency_pre_denial_us, p95_latency_pre_denial_us,
+      mean_latency_full_us, mean_latency_rejected_us, u_prim_at_denial,
+      u_pure_at_denial, overhead_at_denial, u_prim_final, u_pure_final,
+      u_stub_final, overhead_final, invariants_verified);
+
+  const int fd = ::open(csv_path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+  if (fd < 0) {
+    throw std::runtime_error("Failed to open summary CSV for appending: " +
+                             csv_path.string());
+  }
+
+  if (::flock(fd, LOCK_EX) != 0) {
+    ::close(fd);
+    throw std::runtime_error("Failed to acquire flock on summary CSV: " +
+                             csv_path.string());
+  }
+
+  struct stat st{};
+  if (::fstat(fd, &st) == 0 && st.st_size == 0) {
+    const std::string_view header = MASTER_SUMMARY_CSV_HEADER;
+    const ssize_t hw = ::write(fd, header.data(), header.size());
+    if (hw != static_cast<ssize_t>(header.size())) {
+      ::flock(fd, LOCK_UN);
+      ::close(fd);
+      throw std::runtime_error("Failed to write header to summary CSV: " +
+                               csv_path.string());
+    }
+  }
+
+  const ssize_t rw = ::write(fd, row_str.data(), row_str.size());
+  if (rw != static_cast<ssize_t>(row_str.size())) {
+    ::flock(fd, LOCK_UN);
+    ::close(fd);
+    throw std::runtime_error("Failed to write row to summary CSV: " +
+                             csv_path.string());
+  }
+
+  ::fdatasync(fd);
+  ::flock(fd, LOCK_UN);
+  ::close(fd);
 }
 
 }  // namespace ton

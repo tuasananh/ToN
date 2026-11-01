@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <stdexcept>
 #include <string>
 
@@ -199,6 +200,107 @@ ProvisioningRunResult run_provisioning_algorithm(
           algorithm, graph, scenarios, prewarmed_pool, requests, hooks);
   }
   throw std::invalid_argument("Unsupported AlgorithmId");
+}
+
+void append_run_summary_csv(const std::filesystem::path& csv_path,
+                            std::string_view exp, std::string_view topology,
+                            std::string_view cut_model,
+                            std::string_view traffic, std::string_view seq_id,
+                            const RunSummary& summary,
+                            bool invariants_verified) {
+  SpectralTelemetry::append_summary_csv_row(
+      csv_path, exp, topology, cut_model, traffic, seq_id, summary.algorithm,
+      summary.regime, algorithm_heuristic_name(summary.algorithm),
+      summary.first_denial_idx, summary.total_granted, summary.blocking_prob,
+      summary.mean_latency_pre_denial_us, summary.p95_latency_pre_denial_us,
+      summary.mean_latency_full_us, summary.mean_latency_rejected_us,
+      summary.spectral_at_denial.u_prim_pct,
+      summary.spectral_at_denial.u_pure_pct,
+      summary.spectral_at_denial.overhead_ratio,
+      summary.spectral_final.u_prim_pct, summary.spectral_final.u_pure_pct,
+      summary.spectral_final.u_stub_pct, summary.spectral_final.overhead_ratio,
+      invariants_verified);
+}
+
+void write_telemetry_json(const std::filesystem::path& json_path,
+                          std::string_view exp, std::string_view topology,
+                          std::string_view cut_model, std::string_view traffic,
+                          std::string_view seq_id,
+                          std::span<const RunSummary> summaries,
+                          std::span<const uint8_t> invariants_verified) {
+  if (json_path.has_parent_path()) {
+    std::filesystem::create_directories(json_path.parent_path());
+  }
+  std::filesystem::path tmp_path = json_path;
+  tmp_path += ".tmp";
+
+  {
+    std::ofstream ofs(tmp_path, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open()) {
+      throw std::runtime_error("Failed to open telemetry JSON for writing: " +
+                               tmp_path.string());
+    }
+    ofs << "{\n"
+        << "  \"exp\": \"" << exp << "\",\n"
+        << "  \"topology\": \"" << topology << "\",\n"
+        << "  \"cut_model\": \"" << cut_model << "\",\n"
+        << "  \"traffic\": \"" << traffic << "\",\n"
+        << "  \"seq_id\": \"" << seq_id << "\",\n"
+        << "  \"runs\": [\n";
+
+    for (size_t i = 0; i < summaries.size(); ++i) {
+      const RunSummary& s = summaries[i];
+      const bool inv =
+          (i < invariants_verified.size()) ? invariants_verified[i] : false;
+      ofs << "    {\n"
+          << "      \"algorithm\": \"" << algorithm_name(s.algorithm) << "\",\n"
+          << "      \"regime\": \""
+          << (s.regime == FailureRegime::Simultaneous ? "Simultaneous"
+                                                      : "Sequential")
+          << "\",\n"
+          << "      \"heuristic\": \"" << algorithm_heuristic_name(s.algorithm)
+          << "\",\n"
+          << "      \"first_denial_idx\": " << s.first_denial_idx << ",\n"
+          << "      \"total_granted\": " << s.total_granted << ",\n"
+          << std::fixed << std::setprecision(6)
+          << "      \"blocking_prob\": " << s.blocking_prob << ",\n"
+          << "      \"mean_latency_pre_denial_us\": "
+          << s.mean_latency_pre_denial_us << ",\n"
+          << "      \"p95_latency_pre_denial_us\": "
+          << s.p95_latency_pre_denial_us << ",\n"
+          << "      \"mean_latency_full_us\": " << s.mean_latency_full_us
+          << ",\n"
+          << "      \"mean_latency_rejected_us\": "
+          << s.mean_latency_rejected_us << ",\n"
+          << "      \"u_prim_at_denial\": " << s.spectral_at_denial.u_prim_pct
+          << ",\n"
+          << "      \"u_pure_at_denial\": " << s.spectral_at_denial.u_pure_pct
+          << ",\n"
+          << "      \"overhead_at_denial\": "
+          << s.spectral_at_denial.overhead_ratio << ",\n"
+          << "      \"u_prim_final\": " << s.spectral_final.u_prim_pct << ",\n"
+          << "      \"u_pure_final\": " << s.spectral_final.u_pure_pct << ",\n"
+          << "      \"u_stub_final\": " << s.spectral_final.u_stub_pct << ",\n"
+          << "      \"overhead_final\": " << s.spectral_final.overhead_ratio
+          << ",\n"
+          << "      \"refcounts_exact\": "
+          << (s.refcounts_exact ? "true" : "false") << ",\n"
+          << "      \"dsatur_theorem1_bypass_steps\": "
+          << s.dsatur_theorem1_bypass_steps << ",\n"
+          << "      \"dsatur_theorem1_fc_checked_steps\": "
+          << s.dsatur_theorem1_fc_checked_steps << ",\n"
+          << "      \"invariants_verified\": " << (inv ? "true" : "false")
+          << "\n"
+          << "    }" << (i + 1 < summaries.size() ? "," : "") << "\n";
+    }
+    ofs << "  ]\n}\n";
+    ofs.flush();
+    if (!ofs.good()) {
+      throw std::runtime_error("I/O error writing telemetry JSON: " +
+                               tmp_path.string());
+    }
+  }
+  std::filesystem::rename(tmp_path, json_path);
 }
 
 }  // namespace ton

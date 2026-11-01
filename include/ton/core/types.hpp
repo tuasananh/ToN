@@ -54,6 +54,71 @@ enum class FailureRegime : uint8_t {
   Sequential = 1,
 };
 
+enum class AlgorithmId : uint8_t {
+  SimRDF = 0,
+  SeqRDF = 1,
+  GreedySimRDF = 2,
+  GreedySeqRDF = 3,
+  NoRerouteSimRDF = 4,
+  NoRerouteSeqRDF = 5,
+};
+
+inline constexpr std::array<AlgorithmId, 6> ALL_ALGORITHMS = {
+    AlgorithmId::SimRDF,          AlgorithmId::SeqRDF,
+    AlgorithmId::GreedySimRDF,    AlgorithmId::GreedySeqRDF,
+    AlgorithmId::NoRerouteSimRDF, AlgorithmId::NoRerouteSeqRDF,
+};
+
+[[nodiscard]] constexpr std::string_view algorithm_name(
+    AlgorithmId alg) noexcept {
+  switch (alg) {
+    case AlgorithmId::SimRDF:
+      return "SimRDF";
+    case AlgorithmId::SeqRDF:
+      return "SeqRDF";
+    case AlgorithmId::GreedySimRDF:
+      return "GreedySimRDF";
+    case AlgorithmId::GreedySeqRDF:
+      return "GreedySeqRDF";
+    case AlgorithmId::NoRerouteSimRDF:
+      return "NoRerouteSimRDF";
+    case AlgorithmId::NoRerouteSeqRDF:
+      return "NoRerouteSeqRDF";
+  }
+  return "Unknown";
+}
+
+[[nodiscard]] constexpr FailureRegime algorithm_regime(
+    AlgorithmId alg) noexcept {
+  switch (alg) {
+    case AlgorithmId::SimRDF:
+    case AlgorithmId::GreedySimRDF:
+    case AlgorithmId::NoRerouteSimRDF:
+      return FailureRegime::Simultaneous;
+    case AlgorithmId::SeqRDF:
+    case AlgorithmId::GreedySeqRDF:
+    case AlgorithmId::NoRerouteSeqRDF:
+      return FailureRegime::Sequential;
+  }
+  return FailureRegime::Simultaneous;
+}
+
+[[nodiscard]] constexpr std::string_view algorithm_heuristic_name(
+    AlgorithmId alg) noexcept {
+  switch (alg) {
+    case AlgorithmId::SimRDF:
+    case AlgorithmId::SeqRDF:
+      return "DSATUR";
+    case AlgorithmId::GreedySimRDF:
+    case AlgorithmId::GreedySeqRDF:
+      return "Greedy";
+    case AlgorithmId::NoRerouteSimRDF:
+    case AlgorithmId::NoRerouteSeqRDF:
+      return "NoReroute";
+  }
+  return "Unknown";
+}
+
 [[nodiscard]] constexpr WavelengthMask wavelength_bit(uint8_t w) noexcept {
   return static_cast<WavelengthMask>(1u) << w;
 }

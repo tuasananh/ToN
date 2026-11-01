@@ -32,71 +32,6 @@ using GreedySeqRdfOrchestrator = SeqOrchestrator<GreedySolver>;
 using NoRerouteSimRdfOrchestrator = SimOrchestrator<NoRerouteSolver>;
 using NoRerouteSeqRdfOrchestrator = SeqOrchestrator<NoRerouteSolver>;
 
-enum class AlgorithmId : uint8_t {
-  SimRDF = 0,
-  SeqRDF = 1,
-  GreedySimRDF = 2,
-  GreedySeqRDF = 3,
-  NoRerouteSimRDF = 4,
-  NoRerouteSeqRDF = 5,
-};
-
-inline constexpr std::array<AlgorithmId, 6> ALL_ALGORITHMS = {
-    AlgorithmId::SimRDF,          AlgorithmId::SeqRDF,
-    AlgorithmId::GreedySimRDF,    AlgorithmId::GreedySeqRDF,
-    AlgorithmId::NoRerouteSimRDF, AlgorithmId::NoRerouteSeqRDF,
-};
-
-[[nodiscard]] constexpr std::string_view algorithm_name(
-    AlgorithmId alg) noexcept {
-  switch (alg) {
-    case AlgorithmId::SimRDF:
-      return "SimRDF";
-    case AlgorithmId::SeqRDF:
-      return "SeqRDF";
-    case AlgorithmId::GreedySimRDF:
-      return "GreedySimRDF";
-    case AlgorithmId::GreedySeqRDF:
-      return "GreedySeqRDF";
-    case AlgorithmId::NoRerouteSimRDF:
-      return "NoRerouteSimRDF";
-    case AlgorithmId::NoRerouteSeqRDF:
-      return "NoRerouteSeqRDF";
-  }
-  return "Unknown";
-}
-
-[[nodiscard]] constexpr FailureRegime algorithm_regime(
-    AlgorithmId alg) noexcept {
-  switch (alg) {
-    case AlgorithmId::SimRDF:
-    case AlgorithmId::GreedySimRDF:
-    case AlgorithmId::NoRerouteSimRDF:
-      return FailureRegime::Simultaneous;
-    case AlgorithmId::SeqRDF:
-    case AlgorithmId::GreedySeqRDF:
-    case AlgorithmId::NoRerouteSeqRDF:
-      return FailureRegime::Sequential;
-  }
-  return FailureRegime::Simultaneous;
-}
-
-[[nodiscard]] constexpr std::string_view algorithm_heuristic_name(
-    AlgorithmId alg) noexcept {
-  switch (alg) {
-    case AlgorithmId::SimRDF:
-    case AlgorithmId::SeqRDF:
-      return "DSATUR";
-    case AlgorithmId::GreedySimRDF:
-    case AlgorithmId::GreedySeqRDF:
-      return "Greedy";
-    case AlgorithmId::NoRerouteSimRDF:
-    case AlgorithmId::NoRerouteSeqRDF:
-      return "NoReroute";
-  }
-  return "Unknown";
-}
-
 [[nodiscard]] bool try_parse_algorithm_id(std::string_view name,
                                           AlgorithmId& out_alg) noexcept;
 
@@ -176,6 +111,20 @@ struct RunSummary {
     bool refcounts_exact, uint64_t theorem1_bypass_steps = 0,
     uint64_t theorem1_fc_steps = 0);
 
+void append_run_summary_csv(const std::filesystem::path& csv_path,
+                            std::string_view exp, std::string_view topology,
+                            std::string_view cut_model,
+                            std::string_view traffic, std::string_view seq_id,
+                            const RunSummary& summary,
+                            bool invariants_verified);
+
+void write_telemetry_json(const std::filesystem::path& json_path,
+                          std::string_view exp, std::string_view topology,
+                          std::string_view cut_model, std::string_view traffic,
+                          std::string_view seq_id,
+                          std::span<const RunSummary> summaries,
+                          std::span<const uint8_t> invariants_verified);
+
 struct ProvisioningRunResult {
   NetworkState state;
   std::vector<StepRecord> records;
@@ -192,4 +141,3 @@ struct ProvisioningRunResult {
     OnlineLoopHooks hooks = {});
 
 }  // namespace ton
-

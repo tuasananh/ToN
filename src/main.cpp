@@ -36,11 +36,71 @@ void print_usage(std::ostream& os, std::string_view prog) {
         "alg)\n"
      << "  --output-dir <dir>           Write <algorithm>_steps.csv into "
         "directory\n"
+     << "  --output-step-prefix <pfx>   Write <pfx><algorithm>.csv for each "
+        "algorithm\n"
+     << "  --output-summary <csv>       Append standardized 23-column summary "
+        "CSV row(s)\n"
+     << "  --output-json <json>         Write run telemetry JSON export\n"
+     << "  --exp <name>                 Experiment label (e.g. exp1, exp2, "
+        "exp3)\n"
+     << "  --traffic <name>             Traffic profile (e.g. realistic, 1d1m, "
+        "uniform)\n"
+     << "  --seq-id <name>              Sequence ID (e.g. s01..s28, p01..p28, "
+        "p_short, p_long)\n"
      << "  --verify-invariants [csv]    Audit trajectory CSV against metric "
         "invariants,\n"
      << "                               or verify state & metric invariants "
         "during simulation\n"
      << "  -h, --help                   Show this help message\n";
+}
+
+void auto_detect_metadata(const std::filesystem::path& stream_path,
+                          ton::CutModel cut_model, std::string& exp,
+                          std::string& traffic, std::string& seq_id) {
+  const std::string s_str = stream_path.string();
+  const std::string filename = stream_path.filename().string();
+
+  if (exp.empty()) {
+    if (s_str.find("exp3_permutations") != std::string::npos) {
+      exp = "exp3";
+    } else {
+      exp = (cut_model == ton::CutModel::Span) ? "exp1" : "exp2";
+    }
+  }
+
+  if (traffic.empty()) {
+    if (s_str.find("exp3_permutations") != std::string::npos) {
+      traffic = "realistic";
+    } else if (filename.find("realistic") != std::string::npos) {
+      traffic = "realistic";
+    } else if (filename.find("1d1m") != std::string::npos) {
+      traffic = "1d1m";
+    } else if (filename.find("uniform") != std::string::npos) {
+      traffic = "uniform";
+    } else {
+      traffic = "unknown";
+    }
+  }
+
+  if (seq_id.empty()) {
+    if (filename.find("perm_shortest_first") != std::string::npos) {
+      seq_id = "p_short";
+    } else if (filename.find("perm_longest_first") != std::string::npos) {
+      seq_id = "p_long";
+    } else {
+      const size_t p_pos = filename.find("perm_");
+      if (p_pos != std::string::npos && p_pos + 7 <= filename.size()) {
+        seq_id = "p" + filename.substr(p_pos + 5, 2);
+      } else {
+        const size_t s_pos = filename.find("seed_");
+        if (s_pos != std::string::npos && s_pos + 7 <= filename.size()) {
+          seq_id = "s" + filename.substr(s_pos + 5, 2);
+        } else {
+          seq_id = "s01";
+        }
+      }
+    }
+  }
 }
 
 void write_steps_atomic(const std::filesystem::path& out_path,
@@ -61,6 +121,12 @@ int main(int argc, char** argv) {
   std::filesystem::path stream_path;
   std::filesystem::path output_steps_path;
   std::filesystem::path output_dir_path;
+  std::string output_step_prefix;
+  std::filesystem::path output_summary_path;
+  std::filesystem::path output_json_path;
+  std::string exp_label;
+  std::string traffic_label;
+  std::string seq_id_label;
   std::filesystem::path verify_invariants_path;
   bool verify_invariants = false;
   ton::CutModel cut_model = ton::CutModel::Span;
@@ -118,6 +184,18 @@ int main(int argc, char** argv) {
         output_steps_path = require_value(arg);
       } else if (arg == "--output-dir") {
         output_dir_path = require_value(arg);
+      } else if (arg == "--output-step-prefix") {
+        output_step_prefix = std::string(require_value(arg));
+      } else if (arg == "--output-summary") {
+        output_summary_path = require_value(arg);
+      } else if (arg == "--output-json") {
+        output_json_path = require_value(arg);
+      } else if (arg == "--exp") {
+        exp_label = std::string(require_value(arg));
+      } else if (arg == "--traffic") {
+        traffic_label = std::string(require_value(arg));
+      } else if (arg == "--seq-id") {
+        seq_id_label = std::string(require_value(arg));
       } else {
         throw std::invalid_argument("Unknown option: " + std::string(arg));
       }
@@ -193,6 +271,11 @@ int main(int argc, char** argv) {
               << " | PathPool: " << path_pool.num_paths() << " paths ("
               << prewarm_ms << " ms)\n";
 
+    auto_detect_metadata(stream_path, cut_model, exp_label, traffic_label,
+                         seq_id_label);
+    const std::string cut_model_str =
+        (cut_model == ton::CutModel::Span ? "span" : "directional");
+
     std::vector<ton::AlgorithmId> selected;
     if (run_all_algorithms) {
       selected.assign(ton::ALL_ALGORITHMS.begin(), ton::ALL_ALGORITHMS.end());
@@ -210,6 +293,11 @@ int main(int argc, char** argv) {
       std::cout << std::setw(8) << "InvOK";
     }
     std::cout << "\n";
+
+    std::vector<ton::RunSummary> collected_summaries;
+    std::vector<uint8_t> collected_invariants;
+    collected_summaries.reserve(selected.size());
+    collected_invariants.reserve(selected.size());
 
     for (const ton::AlgorithmId alg : selected) {
       const ton::ProvisioningRunResult run = ton::run_provisioning_algorithm(
@@ -288,6 +376,32 @@ int main(int argc, char** argv) {
           }
         }
       }
+      if (!output_step_prefix.empty()) {
+        const std::filesystem::path p =
+            output_step_prefix + std::string(ton::algorithm_name(alg)) + ".csv";
+        write_steps_atomic(p, run.records);
+        if (verify_invariants) {
+          const auto csv_audit = ton::InvariantAuditor::audit_trajectory_csv(p);
+          if (!csv_audit.passed) {
+            std::cerr << "[FATAL] Written CSV failed trajectory audit: "
+                      << p.string() << "\n";
+            return EXIT_FAILURE;
+          }
+        }
+      }
+      if (!output_summary_path.empty()) {
+        ton::append_run_summary_csv(output_summary_path, exp_label,
+                                    graph.name(), cut_model_str, traffic_label,
+                                    seq_id_label, s, invariants_ok);
+      }
+      collected_summaries.push_back(s);
+      collected_invariants.push_back(invariants_ok ? 1u : 0u);
+    }
+
+    if (!output_json_path.empty()) {
+      ton::write_telemetry_json(output_json_path, exp_label, graph.name(),
+                                cut_model_str, traffic_label, seq_id_label,
+                                collected_summaries, collected_invariants);
     }
     return EXIT_SUCCESS;
   } catch (const std::exception& ex) {
