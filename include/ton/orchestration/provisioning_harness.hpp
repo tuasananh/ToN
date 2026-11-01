@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -130,6 +131,22 @@ struct ProvisioningRunResult {
   std::vector<StepRecord> records;
   RunSummary summary;
 };
+
+struct ProvisioningRunView {
+  AlgorithmId algorithm = AlgorithmId::SimRDF;
+  const NetworkState& state;
+  std::span<const StepRecord> records;
+  const RunSummary& summary;
+};
+
+// Executes a sequence of algorithms reusing pre-allocated NetworkState and
+// Orchestrator buffers with zero dynamic memory allocations across runs.
+void run_provisioning_suite(
+    std::span<const AlgorithmId> algorithms, const Graph& graph,
+    const ScenarioSet& scenarios, const PathPool& prewarmed_pool,
+    std::span<const Request> requests,
+    const std::function<void(const ProvisioningRunView&)>& on_result,
+    OnlineLoopHooks hooks = {});
 
 // Executes one of the 6 canonical algorithms to completion over `requests`
 // using a pre-warmed `path_pool`, returning the final NetworkState, all T

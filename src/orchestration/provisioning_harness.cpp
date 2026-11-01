@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -200,6 +201,128 @@ ProvisioningRunResult run_provisioning_algorithm(
           algorithm, graph, scenarios, prewarmed_pool, requests, hooks);
   }
   throw std::invalid_argument("Unsupported AlgorithmId");
+}
+
+void run_provisioning_suite(
+    std::span<const AlgorithmId> algorithms, const Graph& graph,
+    const ScenarioSet& scenarios, const PathPool& prewarmed_pool,
+    std::span<const Request> requests,
+    const std::function<void(const ProvisioningRunView&)>& on_result,
+    OnlineLoopHooks hooks) {
+  if (algorithms.empty()) {
+    return;
+  }
+
+  const uint16_t max_req = compute_max_request_slot(requests);
+
+  std::unique_ptr<NetworkState> sim_state;
+  std::unique_ptr<NetworkState> seq_state;
+
+  std::unique_ptr<SimRdfOrchestrator> sim_rdf;
+  std::unique_ptr<SeqRdfOrchestrator> seq_rdf;
+  std::unique_ptr<GreedySimRdfOrchestrator> greedy_sim_rdf;
+  std::unique_ptr<GreedySeqRdfOrchestrator> greedy_seq_rdf;
+  std::unique_ptr<NoRerouteSimRdfOrchestrator> no_reroute_sim_rdf;
+  std::unique_ptr<NoRerouteSeqRdfOrchestrator> no_reroute_seq_rdf;
+
+  std::vector<StepRecord> records(requests.size(), StepRecord{});
+
+  auto get_sim_state = [&]() -> NetworkState& {
+    if (!sim_state) {
+      sim_state = std::make_unique<NetworkState>(
+          graph, scenarios, FailureRegime::Simultaneous, max_req);
+    }
+    return *sim_state;
+  };
+
+  auto get_seq_state = [&]() -> NetworkState& {
+    if (!seq_state) {
+      seq_state = std::make_unique<NetworkState>(
+          graph, scenarios, FailureRegime::Sequential, max_req);
+    }
+    return *seq_state;
+  };
+
+  auto run_single = [&](auto& orchestrator, NetworkState& state,
+                        AlgorithmId algorithm) {
+    state.reset();
+    orchestrator.reset();
+    std::fill(records.begin(), records.end(), StepRecord{});
+
+    execute_online_provisioning_loop(orchestrator, state, requests, records,
+                                     hooks);
+
+    const bool refcounts_ok =
+        SpectralTelemetry::verify_refcounts_exact(state) &&
+        (SpectralTelemetry::evaluate(state) ==
+         SpectralTelemetry::evaluate_full_scan(state));
+
+    const RunSummary summary = summarize_provisioning_run(
+        algorithm, records, refcounts_ok,
+        orchestrator.scratchpad().theorem1_bypass_steps,
+        orchestrator.scratchpad().theorem1_fc_checked_steps);
+
+    ProvisioningRunView view{
+        .algorithm = algorithm,
+        .state = state,
+        .records = records,
+        .summary = summary,
+    };
+    on_result(view);
+  };
+
+  for (const AlgorithmId alg : algorithms) {
+    switch (alg) {
+      case AlgorithmId::SimRDF: {
+        if (!sim_rdf) {
+          sim_rdf = std::make_unique<SimRdfOrchestrator>(
+              graph, scenarios, prewarmed_pool, max_req);
+        }
+        run_single(*sim_rdf, get_sim_state(), alg);
+        break;
+      }
+      case AlgorithmId::GreedySimRDF: {
+        if (!greedy_sim_rdf) {
+          greedy_sim_rdf = std::make_unique<GreedySimRdfOrchestrator>(
+              graph, scenarios, prewarmed_pool, max_req);
+        }
+        run_single(*greedy_sim_rdf, get_sim_state(), alg);
+        break;
+      }
+      case AlgorithmId::NoRerouteSimRDF: {
+        if (!no_reroute_sim_rdf) {
+          no_reroute_sim_rdf = std::make_unique<NoRerouteSimRdfOrchestrator>(
+              graph, scenarios, prewarmed_pool, max_req);
+        }
+        run_single(*no_reroute_sim_rdf, get_sim_state(), alg);
+        break;
+      }
+      case AlgorithmId::SeqRDF: {
+        if (!seq_rdf) {
+          seq_rdf = std::make_unique<SeqRdfOrchestrator>(
+              graph, scenarios, prewarmed_pool, max_req);
+        }
+        run_single(*seq_rdf, get_seq_state(), alg);
+        break;
+      }
+      case AlgorithmId::GreedySeqRDF: {
+        if (!greedy_seq_rdf) {
+          greedy_seq_rdf = std::make_unique<GreedySeqRdfOrchestrator>(
+              graph, scenarios, prewarmed_pool, max_req);
+        }
+        run_single(*greedy_seq_rdf, get_seq_state(), alg);
+        break;
+      }
+      case AlgorithmId::NoRerouteSeqRDF: {
+        if (!no_reroute_seq_rdf) {
+          no_reroute_seq_rdf = std::make_unique<NoRerouteSeqRdfOrchestrator>(
+              graph, scenarios, prewarmed_pool, max_req);
+        }
+        run_single(*no_reroute_seq_rdf, get_seq_state(), alg);
+        break;
+      }
+    }
+  }
 }
 
 void append_run_summary_csv(const std::filesystem::path& csv_path,

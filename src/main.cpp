@@ -305,104 +305,123 @@ int main(int argc, char** argv) {
     collected_summaries.reserve(selected.size());
     collected_invariants.reserve(selected.size());
 
-    for (const ton::AlgorithmId alg : selected) {
-      const ton::ProvisioningRunResult run = ton::run_provisioning_algorithm(
-          alg, graph, scenarios, path_pool, requests);
-      const ton::RunSummary& s = run.summary;
+    bool suite_success = true;
+    ton::run_provisioning_suite(
+        selected, graph, scenarios, path_pool, requests,
+        [&](const ton::ProvisioningRunView& run) {
+          if (!suite_success) {
+            return;
+          }
+          const ton::AlgorithmId alg = run.algorithm;
+          const ton::RunSummary& s = run.summary;
 
-      bool invariants_ok = s.refcounts_exact;
-      if (verify_invariants) {
-        for (const auto& rec : run.records) {
-          const auto rec_res = ton::InvariantAuditor::audit_step_record(rec);
-          if (!rec_res.passed) {
-            invariants_ok = false;
-            std::cerr << "[FAIL] Step record invariant violation at t=" << rec.t
-                      << ": " << rec_res.violations.front().message << "\n";
-            break;
+          bool invariants_ok = s.refcounts_exact;
+          if (verify_invariants) {
+            for (const auto& rec : run.records) {
+              const auto rec_res =
+                  ton::InvariantAuditor::audit_step_record(rec);
+              if (!rec_res.passed) {
+                invariants_ok = false;
+                std::cerr << "[FAIL] Step record invariant violation at t="
+                          << rec.t << ": " << rec_res.violations.front().message
+                          << "\n";
+                break;
+              }
+            }
+            if (invariants_ok) {
+              const auto state_audit =
+                  ton::InvariantAuditor::audit_state(run.state, path_pool);
+              if (!state_audit.passed) {
+                invariants_ok = false;
+                std::cerr << "[FAIL] Final state invariant violation for "
+                          << ton::algorithm_name(alg) << ": "
+                          << state_audit.violations.front().message << "\n";
+              }
+            }
           }
-        }
-        if (invariants_ok) {
-          const auto state_audit =
-              ton::InvariantAuditor::audit_state(run.state, path_pool);
-          if (!state_audit.passed) {
-            invariants_ok = false;
-            std::cerr << "[FAIL] Final state invariant violation for "
-                      << ton::algorithm_name(alg) << ": "
-                      << state_audit.violations.front().message << "\n";
-          }
-        }
-      }
 
-      std::cout << std::left << std::setw(17) << ton::algorithm_name(alg)
-                << std::right << std::setw(10) << s.first_denial_idx
-                << std::setw(11) << s.total_granted << std::setw(9)
-                << std::setprecision(2) << (s.blocking_prob * 100.0)
-                << std::setw(13) << std::setprecision(2)
-                << s.mean_latency_pre_denial_us << std::setw(13)
-                << s.mean_latency_full_us << std::setw(11)
-                << s.spectral_final.u_prim_pct << std::setw(11)
-                << s.spectral_final.u_pure_pct << std::setw(11)
-                << s.spectral_final.u_stub_pct << std::setw(11)
-                << std::setprecision(4) << s.spectral_final.overhead_ratio
-                << std::setw(10) << (s.refcounts_exact ? "true" : "FALSE");
-      if (verify_invariants) {
-        std::cout << std::setw(8) << (invariants_ok ? "PASS" : "FAIL");
-      }
-      std::cout << "\n";
+          std::cout << std::left << std::setw(17) << ton::algorithm_name(alg)
+                    << std::right << std::setw(10) << s.first_denial_idx
+                    << std::setw(11) << s.total_granted << std::setw(9)
+                    << std::setprecision(2) << (s.blocking_prob * 100.0)
+                    << std::setw(13) << std::setprecision(2)
+                    << s.mean_latency_pre_denial_us << std::setw(13)
+                    << s.mean_latency_full_us << std::setw(11)
+                    << s.spectral_final.u_prim_pct << std::setw(11)
+                    << s.spectral_final.u_pure_pct << std::setw(11)
+                    << s.spectral_final.u_stub_pct << std::setw(11)
+                    << std::setprecision(4) << s.spectral_final.overhead_ratio
+                    << std::setw(10) << (s.refcounts_exact ? "true" : "FALSE");
+          if (verify_invariants) {
+            std::cout << std::setw(8) << (invariants_ok ? "PASS" : "FAIL");
+          }
+          std::cout << "\n";
 
-      if (!s.refcounts_exact || !invariants_ok) {
-        std::cerr << "[FATAL] Invariant verification failed for "
-                  << ton::algorithm_name(alg) << "\n";
-        return EXIT_FAILURE;
-      }
+          if (!s.refcounts_exact || !invariants_ok) {
+            std::cerr << "[FATAL] Invariant verification failed for "
+                      << ton::algorithm_name(alg) << "\n";
+            suite_success = false;
+            return;
+          }
 
-      if (!output_steps_path.empty()) {
-        write_steps_atomic(output_steps_path, run.records);
-        if (verify_invariants) {
-          const auto csv_audit =
-              ton::InvariantAuditor::audit_trajectory_csv(output_steps_path);
-          if (!csv_audit.passed) {
-            std::cerr << "[FATAL] Written CSV failed trajectory audit: "
-                      << output_steps_path.string() << "\n";
-            return EXIT_FAILURE;
+          if (!output_steps_path.empty()) {
+            write_steps_atomic(output_steps_path, run.records);
+            if (verify_invariants) {
+              const auto csv_audit =
+                  ton::InvariantAuditor::audit_trajectory_csv(
+                      output_steps_path);
+              if (!csv_audit.passed) {
+                std::cerr << "[FATAL] Written CSV failed trajectory audit: "
+                          << output_steps_path.string() << "\n";
+                suite_success = false;
+                return;
+              }
+            }
           }
-        }
-      }
-      if (!output_dir_path.empty()) {
-        const std::filesystem::path p =
-            output_dir_path /
-            (std::string(ton::algorithm_name(alg)) + "_steps.csv");
-        write_steps_atomic(p, run.records);
-        if (verify_invariants) {
-          const auto csv_audit = ton::InvariantAuditor::audit_trajectory_csv(p);
-          if (!csv_audit.passed) {
-            std::cerr << "[FATAL] Written CSV failed trajectory audit: "
-                      << p.string() << "\n";
-            return EXIT_FAILURE;
+          if (!output_dir_path.empty()) {
+            const std::filesystem::path p =
+                output_dir_path /
+                (std::string(ton::algorithm_name(alg)) + "_steps.csv");
+            write_steps_atomic(p, run.records);
+            if (verify_invariants) {
+              const auto csv_audit =
+                  ton::InvariantAuditor::audit_trajectory_csv(p);
+              if (!csv_audit.passed) {
+                std::cerr << "[FATAL] Written CSV failed trajectory audit: "
+                          << p.string() << "\n";
+                suite_success = false;
+                return;
+              }
+            }
           }
-        }
-      }
-      if (!output_step_prefix.empty()) {
-        const std::filesystem::path p =
-            output_step_prefix + std::string(ton::algorithm_name(alg)) + ".csv";
-        write_steps_atomic(p, run.records);
-        if (verify_invariants) {
-          const auto csv_audit = ton::InvariantAuditor::audit_trajectory_csv(p);
-          if (!csv_audit.passed) {
-            std::cerr << "[FATAL] Written CSV failed trajectory audit: "
-                      << p.string() << "\n";
-            return EXIT_FAILURE;
+          if (!output_step_prefix.empty()) {
+            const std::filesystem::path p =
+                output_step_prefix + std::string(ton::algorithm_name(alg)) +
+                ".csv";
+            write_steps_atomic(p, run.records);
+            if (verify_invariants) {
+              const auto csv_audit =
+                  ton::InvariantAuditor::audit_trajectory_csv(p);
+              if (!csv_audit.passed) {
+                std::cerr << "[FATAL] Written CSV failed trajectory audit: "
+                          << p.string() << "\n";
+                suite_success = false;
+                return;
+              }
+            }
           }
-        }
-      }
-      const bool invariants_certified = verify_invariants && invariants_ok;
-      if (!output_summary_path.empty()) {
-        ton::append_run_summary_csv(output_summary_path, exp_label,
-                                    graph.name(), cut_model_str, traffic_label,
-                                    seq_id_label, s, invariants_certified);
-      }
-      collected_summaries.push_back(s);
-      collected_invariants.push_back(invariants_certified ? 1u : 0u);
+          const bool invariants_certified = verify_invariants && invariants_ok;
+          if (!output_summary_path.empty()) {
+            ton::append_run_summary_csv(
+                output_summary_path, exp_label, graph.name(), cut_model_str,
+                traffic_label, seq_id_label, s, invariants_certified);
+          }
+          collected_summaries.push_back(s);
+          collected_invariants.push_back(invariants_certified ? 1u : 0u);
+        });
+
+    if (!suite_success) {
+      return EXIT_FAILURE;
     }
 
     if (!output_json_path.empty()) {
