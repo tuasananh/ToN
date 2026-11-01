@@ -249,4 +249,38 @@ TEST_CASE(
       }
     }
   }
+
+  SECTION(
+      "Germany50: Seeds 01, 02, 03 Directional Cuts Scale Verification Gate") {
+    const auto germany = ton::Graph::from_sndlib_xml(
+        ton::test::repo_root() / "data" / "topologies" / "germany50.xml");
+    const auto germany_dir =
+        ton::ScenarioSet::enumerate(germany, ton::CutModel::Directional);
+
+#if defined(NDEBUG)
+    constexpr size_t kGermanyReqs = 1000;
+    const std::vector<size_t> audit_pts = {250, 500, 750, 999};
+#else
+    constexpr size_t kGermanyReqs = 200;
+    const std::vector<size_t> audit_pts = {50, 100, 150, 199};
+#endif
+
+    for (const char* seed_file :
+         {"germany50_1d1m_seed_01.csv", "germany50_1d1m_seed_02.csv",
+          "germany50_1d1m_seed_03.csv"}) {
+      const auto stream = ton::load_request_stream_csv(
+          ton::test::repo_root() / "data" / "streams" / seed_file,
+          kGermanyReqs);
+      REQUIRE(stream.size() == kGermanyReqs);
+
+      ton::PathPool pool(germany, ton::DistanceMetric::GeographicKm, 0.10, 10);
+      pool.prewarm_for_stream(stream, germany_dir);
+
+      for (const ton::AlgorithmId alg : ton::ALL_ALGORITHMS) {
+        execute_phase4_audit(
+            alg, germany, germany_dir, pool, stream, audit_pts,
+            /*check_repeatability=*/(alg == ton::AlgorithmId::SimRDF));
+      }
+    }
+  }
 }
